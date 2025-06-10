@@ -27,8 +27,22 @@ class FaissStore:
             raise ImportError("faiss-cpu package is required")
         
         if self.index_path.exists():
-            self.index = faiss.read_index(str(self.index_path))
-            self.next_id = self.index.ntotal
+            try:
+                self.index = faiss.read_index(str(self.index_path))
+                # Check if dimension matches
+                if self.index.d != self.dimension:
+                    print(f"Warning: Existing index dimension {self.index.d} != expected {self.dimension}")
+                    print("Recreating index with correct dimension...")
+                    self.index_path.unlink()  # Remove old index
+                    self.index = faiss.IndexFlatL2(self.dimension)
+                    self.next_id = 0
+                else:
+                    self.next_id = self.index.ntotal
+            except Exception as e:
+                print(f"Error loading existing index: {e}. Creating new index...")
+                self.index_path.unlink(missing_ok=True)
+                self.index = faiss.IndexFlatL2(self.dimension)
+                self.next_id = 0
         else:
             # Using IndexFlatL2 for exact search (can be changed to IndexIVFFlat for approximate)
             self.index = faiss.IndexFlatL2(self.dimension)
@@ -89,6 +103,14 @@ class FaissStore:
         """Save index to disk."""
         faiss.write_index(self.index, str(self.index_path))
     
+    async def reset(self) -> None:
+        """Reset the index by removing all data."""
+        # Remove the index file
+        self.index_path.unlink(missing_ok=True)
+        # Recreate empty index
+        self.index = faiss.IndexFlatL2(self.dimension)
+        self.next_id = 0
+        
     async def close(self) -> None:
         """Save and close index."""
         await self._save_index() 

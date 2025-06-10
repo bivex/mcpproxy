@@ -120,4 +120,10 @@ class DatabaseManager:
                 f"SELECT * FROM tools WHERE id IN ({placeholders})", 
                 list(ids)
             ).fetchall()
-            return [ToolMetadata(**dict(row)) for row in rows] 
+            return [ToolMetadata(**dict(row)) for row in rows]
+            
+    async def reset_database(self) -> None:
+        """Reset database by dropping and recreating tables."""
+        async with self.get_connection() as conn:
+            conn.execute("DROP TABLE IF EXISTS tools")
+            self._create_tables(conn) 

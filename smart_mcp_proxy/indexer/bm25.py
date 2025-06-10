@@ -45,6 +45,35 @@ class BM25Embedder(BaseEmbedder):
         self.retriever = None
         self.corpus = []
         self.indexed = False
+        
+    async def reset_stored_data(self) -> None:
+        """Reset stored index data by removing files from disk."""
+        import shutil
+        self.reset_index()
+        
+        # Remove the entire index directory if it exists
+        if os.path.exists(self.index_dir):
+            try:
+                # Remove all BM25 index files
+                index_path = os.path.join(self.index_dir, "bm25s_index")
+                if os.path.exists(index_path):
+                    # bm25s saves multiple files, so remove the directory
+                    if os.path.isdir(index_path):
+                        shutil.rmtree(index_path)
+                    else:
+                        os.remove(index_path)
+                        
+                # Also clean up any other index files that might exist
+                for file in os.listdir(self.index_dir):
+                    if file.startswith("bm25"):
+                        file_path = os.path.join(self.index_dir, file)
+                        if os.path.isdir(file_path):
+                            shutil.rmtree(file_path)
+                        else:
+                            os.remove(file_path)
+            except Exception:
+                # If cleanup fails, continue - the reset_index() call above is most important
+                pass
     
     def get_corpus_size(self) -> int:
         """Get the current corpus size."""

@@ -84,6 +84,57 @@ class IndexerFacade:
         
         await self.persistence.store_tool_with_vector(tool, vector)
     
+    async def index_tool_from_object(self, tool_obj: Any, server_name: str) -> None:
+        """Index a tool from a Tool object, using hash-based change detection."""
+        from fastmcp.tools.tool import Tool
+        
+        if not isinstance(tool_obj, Tool):
+            raise ValueError(f"Expected Tool object, got {type(tool_obj)}")
+        
+        # Compute hash from all tool fields for change detection
+        tool_data = {
+            "name": tool_obj.name,
+            "description": tool_obj.description,
+            "parameters": tool_obj.parameters,
+            "tags": list(tool_obj.tags) if tool_obj.tags else [],
+            "annotations": tool_obj.annotations
+        }
+        tool_hash = compute_tool_hash(tool_obj.name, tool_obj.description or "", tool_data)
+        
+        # Check if tool already exists with same hash
+        existing_tool = await self.persistence.get_tool_by_hash(tool_hash)
+        if existing_tool:
+            return  # Tool unchanged, no need to re-index
+        
+        # Create enhanced text for embedding (include tags)
+        enhanced_text = self.embedder.combine_tool_text(
+            tool_obj.name, 
+            tool_obj.description or "", 
+            tool_obj.parameters
+        )
+        if tool_obj.tags:
+            enhanced_text += f" | Tags: {', '.join(tool_obj.tags)}"
+        
+        # For BM25, we handle indexing differently
+        if isinstance(self.embedder, BM25Embedder):
+            # Add to corpus for later batch indexing
+            vector = await self.embedder.embed_text(enhanced_text)
+            self._needs_reindex = True
+        else:
+            # For vector embedders, create embedding immediately
+            vector = await self.embedder.embed_text(enhanced_text)
+        
+        # Store minimal metadata in persistence layer (only for hash-based change detection)
+        tool = ToolMetadata(
+            name=tool_obj.name,
+            description=tool_obj.description or "",
+            hash=tool_hash,
+            server_name=server_name,
+            params_json=None  # We don't need to store full params in DB, Tool objects are in memory
+        )
+        
+        await self.persistence.store_tool_with_vector(tool, vector)
+    
     async def reindex_all_tools(self) -> None:
         """Rebuild the entire index with all stored tools (BM25 specific)."""
         if not isinstance(self.embedder, BM25Embedder):
@@ -114,6 +165,12 @@ class IndexerFacade:
         # Rebuild BM25 index with all tools
         await self.embedder.fit_corpus(texts)
         self._needs_reindex = False
+    
+    async def reset_embedder_data(self) -> None:
+        """Reset embedder-specific data."""
+        if isinstance(self.embedder, BM25Embedder):
+            await self.embedder.reset_stored_data()
+        # For other embedders, no additional reset needed beyond persistence reset
     
     async def ensure_index_ready(self) -> None:
         """Ensure the index is ready for search (reindex if needed)."""

@@ -77,6 +77,11 @@ class PersistenceFacade:
         """Get total number of vectors in the store."""
         return await self.vector_store.get_vector_count()
     
+    async def reset_all_data(self) -> None:
+        """Reset all data (database and vector store)."""
+        await self.db.reset_database()
+        await self.vector_store.reset()
+        
     async def close(self) -> None:
         """Close database and vector store connections."""
         await self.vector_store.close() 
