@@ -28,9 +28,9 @@ The Smart MCP Proxy is a **federating gateway** that sits between an AI agent an
 ```mermaid
 graph TD
   subgraph Upstream MCP
-    A1[gcore-mcp-server-http-prod]
-    A2[gcore-docs]
-    A3[gcore-mcp-server-with-oauth]
+    A1[company-mcp-server-http-prod]
+A2[company-docs]
+A3[company-mcp-server-with-oauth]
   end
 
   subgraph Proxy
@@ -53,19 +53,19 @@ graph TD
 ```json
 {
   "mcpServers": {
-    "gcore-mcp-server-http-prod":  {"url": "http://localhost:8081/mcp"},
-    "gcore-docs":                  {"url": "http://localhost:8000/sse"},
-    "gcore-mcp-server-with-oauth": {"url": "http://localhost:8080/mcp"},
+    "company-mcp-server-http-prod":  {"url": "http://localhost:8081/mcp"},
+"company-docs":                  {"url": "http://localhost:8000/sse"},
+"company-mcp-server-with-oauth": {"url": "http://localhost:8080/mcp"},
 
-    "gcore-mcp-server-prod": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "mcp-gcore-python@git+https://gitlab-ed7.cloud.gc.onl/algis.dumbris/mcp-gcore.git",
-        "gcore-mcp-server"
-      ],
-      "env": {
-        "GCORE_TOKEN": "${GCORE_TOKEN}",
+"company-mcp-server-prod": {
+  "command": "uvx",
+  "args": [
+    "--from", 
+    "mcp-company-python@git+https://gitlab-ed7.cloud.gc.onl/algis.dumbris/mcp-company.git",
+    "company-mcp-server"
+  ],
+  "env": {
+    "COMPANY_TOKEN": "${COMPANY_TOKEN}",
         "PORT": "9090"
       }
     }
