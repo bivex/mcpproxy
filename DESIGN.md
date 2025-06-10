@@ -79,9 +79,24 @@ A3[company-mcp-server-with-oauth]
 | ---------------- | --------------------------------------------- | ------- |
 | `SP_EMBEDDER`    | `BM25`, `HF`, `OPENAI`                        | `BM25`  |
 | `SP_HF_MODEL`    | e.g. `sentence-transformers/all-MiniLM-L6-v2` | —       |
+| `SP_TOOLS_LIMIT` | Integer (1-100)                               | `15`    |
 | `OPENAI_API_KEY` | your key                                      | —       |
 
-The proxy chooses the search driver at startup; mixed‑mode hybrid search (lexical + vector) is possible in future.
+The proxy chooses the search driver at startup; mixed‑mode hybrid search (lexical + vector) is possible in future.
+
+### 4.3 Tool Pool Management
+
+The proxy maintains an active pool of registered tools limited by `SP_TOOLS_LIMIT`. When the limit is exceeded, tools are evicted based on a weighted score:
+
+```
+weighted_score = (search_score * 0.7) + (freshness_score * 0.3)
+freshness_score = 1.0 - min(1.0, age_in_seconds / 1800)  # 30min max age
+```
+
+This ensures:
+- High-scoring tools are prioritized
+- Recently accessed tools stay fresh
+- Older, lower-scoring tools are evicted first
 
 ## 5 SQLite + Faiss Schema
 
@@ -106,7 +121,7 @@ CREATE INDEX idx_tools_hash ON tools(hash);
 | Phase            | Action                                                                                                                        |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | **Start‑up**     | 1️⃣ Load JSON config → 2️⃣ Fetch `tools/list` from each server → 3️⃣ Insert/Update SQLite rows, embed & upsert Faiss vectors. |
-| **User query**   | 4️⃣ Agent calls `retrieve_tool(query)` → 5️⃣ Proxy scores candidates, picks top 5, registers wrappers, fires `list_changed`.  |
+| **User query**   | 4️⃣ Agent calls `retrieve_tool(query)` → 5️⃣ Proxy scores candidates, enforces pool limit, registers wrappers, fires `list_changed`.  |
 | **Invocation**   | 6️⃣ Agent invokes newly appeared tools as normal MCP calls.                                                                   |
 | **Refresh loop** | 7️⃣ Proxy polls upstream `notifications/tools/list_changed` (or periodic list) to maintain single source of truth.            |
 
@@ -114,17 +129,17 @@ CREATE INDEX idx_tools_hash ON tools(hash);
 
 - **OAuth**: servers marked with `oauth=true` in extended config use bearer tokens cached in memory.
 - **Per‑origin quotas**: simple token‑bucket keyed by `server_name`.
-- **Sandbox**: new wrappers execute via FastMCP’s remote client; no Python eval happens inside the proxy.
+- **Sandbox**: new wrappers execute via FastMCP's remote client; no Python eval happens inside the proxy.
 
 ## 8 Alternative Designs
 
 | Option                    | Pros                             | Cons                                    |
 | ------------------------- | -------------------------------- | --------------------------------------- |
 | **Remote pgvector DB**    | Horizontal scale, SQL queries    | Adds external dependency                |
-| **Graph RAG (KG + HNSW)** | Captures inter‑tool dependencies | Higher complexity / write‑amplification |
+| **Graph RAG (KG + HNSW)** | Captures inter‑tool dependencies | Higher complexity / write‑amplification |
 
 ## 9 Open Questions
 
-1. How much weight should synthetic questions (à la TDWA in ScaleMCP) have in embeddings vs. plain BM25?  
-2. Should top‑k be adaptive (e.g., score ≥ 0.8) instead of a fixed 5?  
+1. How much weight should synthetic questions (à la TDWA in ScaleMCP) have in embeddings vs. plain BM25?  
+2. Should top‑k be adaptive (e.g., score ≥ 0.8) instead of a fixed 5?  
 3. Would batching multiple `retrieve_tools` calls per user request, as ScaleMCP does, significantly improve latency?  

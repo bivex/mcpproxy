@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,9 @@ class SmartMCPProxyServer:
         self.host = os.getenv("SP_HOST", "127.0.0.1")
         self.port = int(os.getenv("SP_PORT", "8000"))
         
+        # Tool pool limit configuration
+        self.tools_limit = int(os.getenv("SP_TOOLS_LIMIT", "15"))
+        
         # Will be initialized in lifespan
         self.persistence: PersistenceFacade | None = None
         self.indexer: IndexerFacade | None = None
@@ -39,6 +43,9 @@ class SmartMCPProxyServer:
         self.proxy_servers: dict[str, FastMCP] = {}
         self.registered_tools: dict[str, ToolRegistration] = {}
         self.current_tool_registrations: dict[str, Any] = {}
+        
+        # Track tool pool with metadata for eviction
+        self.tool_pool_metadata: dict[str, dict[str, Any]] = {}  # tool_name -> {timestamp, score, original_score}
         
         # Initialize FastMCP server with transport configuration
         fastmcp_kwargs = {
@@ -198,17 +205,34 @@ class SmartMCPProxyServer:
                 if not results:
                     return json.dumps({"message": "No relevant tools found", "tools": []})
                 
-                # Register top K tools dynamically 
-                newly_registered = []
+                # Prepare tools for registration
+                tools_to_register = []
                 for result in results:
                     tool_name = f"{result.tool.server_name}_{result.tool.name}"
                     
                     # Skip if already registered
                     if tool_name in self.current_tool_registrations:
+                        # Update timestamp for existing tool (freshen it)
+                        if tool_name in self.tool_pool_metadata:
+                            self.tool_pool_metadata[tool_name]["timestamp"] = time.time()
+                            self.tool_pool_metadata[tool_name]["score"] = max(
+                                self.tool_pool_metadata[tool_name]["score"], 
+                                result.score
+                            )
                         continue
                     
-                    # Register the tool as a proxy
-                    await self._register_proxy_tool(result.tool, tool_name)
+                    tools_to_register.append((tool_name, result.tool, result.score))
+                
+                # Enforce pool limit before registering new tools
+                evicted_tools = []
+                if tools_to_register:
+                    new_tools_info = [(name, score) for name, _, score in tools_to_register]
+                    evicted_tools = await self._enforce_tool_pool_limit(new_tools_info)
+                
+                # Register new tools
+                newly_registered = []
+                for tool_name, tool_metadata, score in tools_to_register:
+                    await self._register_proxy_tool(tool_metadata, tool_name, score)
                     newly_registered.append(tool_name)
                 
                 # Prepare tool information
@@ -224,17 +248,106 @@ class SmartMCPProxyServer:
                         "newly_registered": tool_name in newly_registered
                     })
                 
+                message = f"Found {len(registered_tools)} tools, registered {len(newly_registered)} new tools"
+                if evicted_tools:
+                    message += f", evicted {len(evicted_tools)} tools to stay within limit ({self.tools_limit})"
+                
                 return json.dumps({
-                    "message": f"Found {len(registered_tools)} tools, registered {len(newly_registered)} new tools",
+                    "message": message,
                     "tools": registered_tools,
                     "newly_registered": newly_registered,
+                    "evicted_tools": evicted_tools,
+                    "pool_size": len(self.current_tool_registrations),
+                    "pool_limit": self.tools_limit,
                     "query": query
                 })
             
             except Exception as e:
                 return json.dumps({"error": str(e)})
     
-    async def _register_proxy_tool(self, tool_metadata: Any, tool_name: str) -> None:
+    def _calculate_tool_weight(self, score: float, added_timestamp: float) -> float:
+        """Calculate weighted score for tool eviction based on score and freshness.
+        
+        Args:
+            score: Original search score (0.0 to 1.0)
+            added_timestamp: Timestamp when tool was added to pool
+            
+        Returns:
+            Weighted score (higher is better, less likely to be evicted)
+        """
+        current_time = time.time()
+        age_seconds = current_time - added_timestamp
+        
+        # Normalize age (0 = fresh, 1 = old)
+        # Tools older than 30 minutes get maximum age penalty
+        max_age_seconds = 30 * 60  # 30 minutes
+        age_normalized = min(1.0, age_seconds / max_age_seconds)
+        
+        # Weighted formula: 70% score, 30% freshness
+        score_weight = 0.7
+        freshness_weight = 0.3
+        freshness_score = 1.0 - age_normalized
+        
+        weighted_score = (score * score_weight) + (freshness_score * freshness_weight)
+        return weighted_score
+    
+    async def _enforce_tool_pool_limit(self, new_tools: list[tuple[str, float]]) -> list[str]:
+        """Enforce tool pool limit by evicting lowest-scoring tools.
+        
+        Args:
+            new_tools: List of (tool_name, score) for tools to be added
+            
+        Returns:
+            List of tool names that were evicted
+        """
+        current_pool_size = len(self.current_tool_registrations)
+        new_tools_count = len(new_tools)
+        total_after_addition = current_pool_size + new_tools_count
+        
+        if total_after_addition <= self.tools_limit:
+            return []  # No eviction needed
+        
+        # Calculate how many tools to evict
+        tools_to_evict_count = total_after_addition - self.tools_limit
+        
+        # Calculate weighted scores for all existing tools
+        tool_weights = []
+        for tool_name, metadata in self.tool_pool_metadata.items():
+            if tool_name in self.current_tool_registrations:
+                weight = self._calculate_tool_weight(metadata["score"], metadata["timestamp"])
+                tool_weights.append((tool_name, weight))
+        
+        # Sort by weight (ascending - lowest weights first for eviction)
+        tool_weights.sort(key=lambda x: x[1])
+        
+        # Evict the lowest scoring tools
+        evicted_tools = []
+        for i in range(min(tools_to_evict_count, len(tool_weights))):
+            tool_name = tool_weights[i][0]
+            await self._evict_tool(tool_name)
+            evicted_tools.append(tool_name)
+        
+        return evicted_tools
+    
+    async def _evict_tool(self, tool_name: str) -> None:
+        """Remove a tool from the active pool.
+        
+        Args:
+            tool_name: Name of tool to evict
+        """
+        # Remove from FastMCP server
+        if hasattr(self.mcp, 'remove_tool'):
+            self.mcp.remove_tool(tool_name)
+        
+        # Clean up tracking
+        self.current_tool_registrations.pop(tool_name, None)
+        self.registered_tools.pop(tool_name, None)
+        self.tool_pool_metadata.pop(tool_name, None)
+        
+        logger = get_logger()
+        logger.debug(f"Evicted tool from pool: {tool_name}")
+    
+    async def _register_proxy_tool(self, tool_metadata: Any, tool_name: str, score: float = 0.0) -> None:
         """Register a single tool as a proxy that calls the upstream server."""
         
         original_tool_name = tool_metadata.name
@@ -283,6 +396,13 @@ class SmartMCPProxyServer:
         # Track this registration
         self.current_tool_registrations[tool_name] = proxy_wrapper
         
+        # Track tool pool metadata for eviction logic
+        self.tool_pool_metadata[tool_name] = {
+            "timestamp": time.time(),
+            "score": score,
+            "original_score": score
+        }
+        
         # Parse input schema if it's a string
         input_schema = {}
         if hasattr(tool_metadata, 'params_json'):
@@ -303,7 +423,7 @@ class SmartMCPProxyServer:
         )
         
         logger = get_logger()
-        logger.debug(f"Registered proxy tool: {tool_name} (original: {original_tool_name})")
+        logger.debug(f"Registered proxy tool: {tool_name} (original: {original_tool_name}, score: {score:.3f})")
     
     async def _create_upstream_clients_and_proxies(self) -> None:
         """Create upstream clients and proxy servers for all configured servers."""
