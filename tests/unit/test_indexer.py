@@ -85,6 +85,114 @@ class TestBaseEmbedder:
         
         expected = "Tool: test_tool | Description: Test description"
         assert result == expected
+    
+    def test_combine_tool_text_complex_anyof_params(self):
+        """Test tool text combination with complex anyOf parameter schemas like gcore tools."""
+        embedder = MockEmbedder()
+        
+        # Simulate complex gcore-style parameter schemas
+        params = {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Project Id"
+                },
+                "region_id": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Region Id"
+                },
+                "delete_floatings": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "title": "Delete Floatings"
+                },
+                "timeout": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "title": "Timeout"
+                },
+                "instance_id": {
+                    "title": "Instance Id",
+                    "type": "string"
+                }
+            },
+            "required": ["instance_id"],
+            "title": "DeleteInstance"
+        }
+        
+        result = embedder.combine_tool_text("delete_instance", "Delete an instance", params)
+        
+        # Verify the result contains expected elements
+        assert "Tool: delete_instance" in result
+        assert "Description: Delete an instance" in result
+        assert "Parameters:" in result
+        
+        # Check that complex anyOf types are handled correctly
+        assert "project_id (string|null): Project Id" in result
+        assert "region_id (string|null): Region Id" in result
+        assert "delete_floatings (string|null): Delete Floatings" in result
+        assert "timeout (string|null): Timeout" in result
+        assert "instance_id (string): Instance Id" in result
+    
+    def test_combine_tool_text_oneof_params(self):
+        """Test tool text combination with oneOf parameter schemas."""
+        embedder = MockEmbedder()
+        
+        params = {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "oneOf": [
+                        {"type": "string"},
+                        {"type": "integer"}
+                    ],
+                    "description": "A value that can be string or integer"
+                }
+            }
+        }
+        
+        result = embedder.combine_tool_text("test_tool", "Test description", params)
+        
+        assert "value (string|integer): A value that can be string or integer" in result
+    
+    def test_combine_tool_text_title_fallback(self):
+        """Test that title is used when description is not available."""
+        embedder = MockEmbedder()
+        
+        params = {
+            "type": "object", 
+            "properties": {
+                "param_with_title": {
+                    "type": "string",
+                    "title": "Parameter Title"
+                    # No description field
+                }
+            }
+        }
+        
+        result = embedder.combine_tool_text("test_tool", "Test description", params)
+        
+        assert "param_with_title (string): Parameter Title" in result
+
+    def test_extract_param_info_edge_cases(self):
+        """Test _extract_param_info with edge cases."""
+        embedder = MockEmbedder()
+        
+        # Test empty param_info
+        param_type, param_desc = embedder._extract_param_info({})
+        assert param_type == "unknown"
+        assert param_desc == ""
+        
+        # Test anyOf with non-dict elements
+        param_info = {"anyOf": ["invalid", {"type": "string"}]}
+        param_type, param_desc = embedder._extract_param_info(param_info)
+        assert param_type == "string"
+        
+        # Test anyOf with no valid types
+        param_info = {"anyOf": [{"invalid": "data"}]}
+        param_type, param_desc = embedder._extract_param_info(param_info)
+        assert param_type == "unknown"
 
 
 class TestBM25Embedder:
