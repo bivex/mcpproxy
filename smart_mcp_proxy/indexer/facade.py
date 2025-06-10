@@ -117,8 +117,10 @@ class IndexerFacade:
     
     async def ensure_index_ready(self) -> None:
         """Ensure the index is ready for search (reindex if needed)."""
-        if isinstance(self.embedder, BM25Embedder) and self._needs_reindex:
-            await self.reindex_all_tools()
+        if isinstance(self.embedder, BM25Embedder):
+            # If we need reindexing or the embedder has no corpus
+            if self._needs_reindex or not self.embedder.is_indexed():
+                await self.reindex_all_tools()
     
     async def search_tools(self, query: str, k: int = 5) -> list[SearchResult]:
         """Search for tools using the configured embedder."""
