@@ -14,35 +14,52 @@ class DatabaseManager:
     
     def __init__(self, db_path: str = "proxy.db"):
         self.db_path = Path(db_path)
-        self._init_database()
+        self.is_memory_db = str(db_path) == ":memory:"
+        self._shared_conn = None
+        
+        if self.is_memory_db:
+            # For in-memory databases, use a shared connection
+            self._shared_conn = sqlite3.connect(":memory:")
+            self._shared_conn.row_factory = sqlite3.Row
+            self._create_tables(self._shared_conn)
+        else:
+            self._init_database()
     
     def _init_database(self) -> None:
         """Initialize database schema."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS tools (
-                    id INTEGER PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    description TEXT,
-                    hash TEXT NOT NULL,
-                    server_name TEXT NOT NULL,
-                    faiss_vector_id INTEGER UNIQUE,
-                    params_json TEXT
-                )
-            """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_tools_hash ON tools(hash)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_tools_server ON tools(server_name)")
-            conn.commit()
+            self._create_tables(conn)
+    
+    def _create_tables(self, conn) -> None:
+        """Create database tables."""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tools (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                hash TEXT NOT NULL,
+                server_name TEXT NOT NULL,
+                faiss_vector_id INTEGER UNIQUE,
+                params_json TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tools_hash ON tools(hash)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tools_server ON tools(server_name)")
+        conn.commit()
     
     @asynccontextmanager
     async def get_connection(self):
         """Get async database connection."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-        finally:
-            conn.close()
+        if self.is_memory_db:
+            # Use shared connection for in-memory databases
+            yield self._shared_conn
+        else:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                yield conn
+            finally:
+                conn.close()
     
     async def insert_tool(self, tool: ToolMetadata) -> int:
         """Insert new tool metadata."""
