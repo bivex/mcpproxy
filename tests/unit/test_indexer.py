@@ -407,7 +407,12 @@ class TestIndexerFacade:
             assert len(results) == 2
             assert all(isinstance(r, SearchResult) for r in results)
             assert results[0].tool.name == "create_instance"
-            assert results[0].score == 0.8
+            # With modified sigmoid normalization: 1 / (1 + exp(-0.8)) ≈ 0.689
+            assert abs(results[0].score - 0.689) < 0.01
+            # Second result with modified sigmoid: 1 / (1 + exp(-0.3)) ≈ 0.574
+            assert abs(results[1].score - 0.574) < 0.01
+            # First result should still have higher score
+            assert results[0].score > results[1].score
     
     @pytest.mark.asyncio
     async def test_search_tools_vector_embedder(self, mock_persistence, temp_index_dir):

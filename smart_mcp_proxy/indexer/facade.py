@@ -153,20 +153,19 @@ class IndexerFacade:
         # Extract scores for normalization
         scores = [score for _, score in results]
         
-        # Normalize scores to [0, 1] range using min-max normalization
-        if len(scores) > 1:
-            min_score = min(scores)
-            max_score = max(scores)
-            if max_score > min_score:
-                # Min-max normalization
-                normalized_scores = [(score - min_score) / (max_score - min_score) for score in scores]
+        # Use modified sigmoid normalization to map scores to [0,1] range
+        # Handle zero scores (nonsense queries) specially
+        import math
+        normalized_scores = []
+        for score in scores:
+            if score <= 0.0:
+                # Map zero/negative scores to very low values (< 0.5)
+                normalized_score = 0.1
             else:
-                # All scores are the same
-                normalized_scores = [1.0] * len(scores)
-        else:
-            # Single result: use sigmoid normalization to map to [0,1]
-            import math
-            normalized_scores = [1.0 / (1.0 + math.exp(-scores[0]))]
+                # Apply sigmoid function: 1 / (1 + exp(-score))
+                # This maps positive scores to (0.5, 1) range
+                normalized_score = 1.0 / (1.0 + math.exp(-score))
+            normalized_scores.append(normalized_score)
         
         # Convert to SearchResult objects with normalized scores
         search_results = []
