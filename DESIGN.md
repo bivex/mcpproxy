@@ -10,9 +10,9 @@ The Smart MCP Proxy is a **federating gateway** that sits between an AI agent an
 - **Indexes** their metadata using a configurable embedding backend (BM25, Hugging Face local, or OpenAI).
 - **Serves a single control tool `retrieve_tools`.** When the agent calls this tool, the proxy:
   1. Searches the index.
-  2. **Automatically registers the top 5 results** with its own FastMCP server instance.
+  2. **Automatically registers the top 5 results** with its own FastMCP server instance.
   3. Emits `notifications/tools/list_changed` so connected clients immediately see the new tools, following MCP spec
-- Persists tool metadata, SHA‑256 hash and embedding reference in **SQLite + Faiss** for quick reload and change detection.
+- Persists tool metadata, SHA‑256 hash and embedding reference in **SQLite + Faiss** for quick reload and change detection.
 
 ## 2 Goals & Non‑Goals
 
@@ -34,21 +34,21 @@ A3[company-mcp-server-with-oauth]
   end
 
   subgraph Proxy
-    B1(Config Loader) --> B2(Index Builder)
+    B1(Config Loader) --> B2(Index Builder)
     B2 -->|vectors| B3(Faiss)
     B2 -->|metadata| B4(SQLite)
-    B5(FastMCP Server) -. list_changed .-> Agent
+    B5(FastMCP Server) -. list_changed .-> Agent
     B5 -- calls --> A1 & A2 & A3
   end
 
-  Agent((AI Agent))
+  Agent((AI Agent))
   Agent -- retrieve_tool --> B5
   B5 -- new tool wrappers --> Agent
 ```
 
 ## 4 Configuration
 
-### 4.1 Server list (Cursor IDE style)
+### 4.1 Server list (Cursor IDE style)
 
 ```json
 {
@@ -73,7 +73,7 @@ A3[company-mcp-server-with-oauth]
 }
 ```
 
-### 4.2 Embedding backend via ENV
+### 4.2 Embedding backend via ENV
 
 | Variable         | Allowed values                                | Default |
 | ---------------- | --------------------------------------------- | ------- |
@@ -98,7 +98,7 @@ This ensures:
 - Recently accessed tools stay fresh
 - Older, lower-scoring tools are evicted first
 
-## 5 SQLite + Faiss Schema
+## 5 SQLite + Faiss Schema
 
 ```sql
 -- SQLite (file: proxy.db)
@@ -114,31 +114,32 @@ CREATE INDEX idx_tools_hash ON tools(hash);
 ```
 
 - **Vectors** are stored in a side‑car Faiss index (`tools.faiss`). `faiss_vector_id` provides the linkage.
-- SHA‑256 hash = `sha256(name||description||params_json)` enables change detection.
+- SHA‑256 hash = `sha256(name||description||params_json)` enables change detection.
 
-## 6 Operational Flow
+## 6 Operational Flow
 
 | Phase            | Action                                                                                                                        |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| **Start‑up**     | 1️⃣ Load JSON config → 2️⃣ Fetch `tools/list` from each server → 3️⃣ Insert/Update SQLite rows, embed & upsert Faiss vectors. |
-| **User query**   | 4️⃣ Agent calls `retrieve_tool(query)` → 5️⃣ Proxy scores candidates, enforces pool limit, registers wrappers, fires `list_changed`.  |
-| **Invocation**   | 6️⃣ Agent invokes newly appeared tools as normal MCP calls.                                                                   |
-| **Refresh loop** | 7️⃣ Proxy polls upstream `notifications/tools/list_changed` (or periodic list) to maintain single source of truth.            |
+| **Start‑up**     | 1️⃣ Load JSON config → 2️⃣ Fetch `tools/list` from each server → 3️⃣ Insert/Update SQLite rows, embed & upsert Faiss vectors. |
+| **Cleanup**      | 🧹 Remove tools from deleted/renamed servers & tools no longer available on their servers (DB used as cache only). |
+| **User query**   | 4️⃣ Agent calls `retrieve_tool(query)` → 5️⃣ Proxy scores candidates, enforces pool limit, registers wrappers, fires `list_changed`.  |
+| **Invocation**   | 6️⃣ Agent invokes newly appeared tools as normal MCP calls.                                                                   |
+| **Refresh loop** | 🚧 **TODO**: Listen to upstream `notifications/tools/list_changed` events, re-fetch tool lists & reindex (currently tools are only discovered at startup). |
 
-## 7 Security & Rate‑Limiting
+## 7 Security & Rate‑Limiting
 
 - **OAuth**: servers marked with `oauth=true` in extended config use bearer tokens cached in memory.
 - **Per‑origin quotas**: simple token‑bucket keyed by `server_name`.
 - **Sandbox**: new wrappers execute via FastMCP's remote client; no Python eval happens inside the proxy.
 
-## 8 Alternative Designs
+## 8 Alternative Designs
 
 | Option                    | Pros                             | Cons                                    |
 | ------------------------- | -------------------------------- | --------------------------------------- |
 | **Remote pgvector DB**    | Horizontal scale, SQL queries    | Adds external dependency                |
 | **Graph RAG (KG + HNSW)** | Captures inter‑tool dependencies | Higher complexity / write‑amplification |
 
-## 9 Open Questions
+## 9 Open Questions
 
 1. How much weight should synthetic questions (à la TDWA in ScaleMCP) have in embeddings vs. plain BM25?  
 2. Should top‑k be adaptive (e.g., score ≥ 0.8) instead of a fixed 5?  

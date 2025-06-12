@@ -109,6 +109,18 @@ class DatabaseManager:
             conn.execute("DELETE FROM tools WHERE server_name=?", (server_name,))
             conn.commit()
     
+    async def delete_tool_by_id(self, tool_id: int) -> None:
+        """Delete a specific tool by ID."""
+        async with self.get_connection() as conn:
+            conn.execute("DELETE FROM tools WHERE id=?", (tool_id,))
+            conn.commit()
+    
+    async def delete_tool_by_name_and_server(self, name: str, server_name: str) -> None:
+        """Delete a specific tool by name and server."""
+        async with self.get_connection() as conn:
+            conn.execute("DELETE FROM tools WHERE name=? AND server_name=?", (name, server_name))
+            conn.commit()
+    
     async def get_tools_by_ids(self, ids: Iterable[int]) -> list[ToolMetadata]:
         """Get tools by IDs."""
         if not ids:

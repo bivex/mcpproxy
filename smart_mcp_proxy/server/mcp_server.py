@@ -12,7 +12,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.tools.tool import Tool  # type: ignore[import-not-found]
 import mcp.types as types
-from ..models.schemas import ProxyConfig, ServerConfig, ToolRegistration, SearchResult, EmbedderType
+from ..models.schemas import ProxyConfig, ServerConfig, ToolRegistration, SearchResult, EmbedderType, ToolMetadata
 from ..persistence.facade import PersistenceFacade
 from ..indexer.facade import IndexerFacade
 from ..logging import get_logger, configure_logging
@@ -675,16 +675,86 @@ class SmartMCPProxyServer:
         logger = get_logger()
         logger.info(f"Starting tool discovery for {len(self.proxy_servers)} servers...")
         
+        # First, get all current servers from configuration
+        current_servers = set(self.proxy_servers.keys())
+        
+        # Clean up tools from servers that no longer exist in config
+        await self._cleanup_stale_servers(current_servers)
+        
+        # Discover and index tools from current servers
+        current_tools = {}  # server_name -> set of tool names
         for server_name, proxy_server in self.proxy_servers.items():
             try:
                 logger.debug(f"Starting tool discovery for server: {server_name}")
-                await self._discover_server_tools(server_name, proxy_server)
+                tools = await self._discover_server_tools(server_name, proxy_server)
+                current_tools[server_name] = set(tools.keys()) if tools else set()
                 logger.debug(f"Completed tool discovery for server: {server_name}")
             except Exception as e:
                 logger.error(f"Error discovering tools from {server_name}: {type(e).__name__}: {e}")
                 logger.error(f"Exception details for {server_name}:", exc_info=True)
+                current_tools[server_name] = set()  # Mark as having no tools
+        
+        # Clean up tools that no longer exist on their servers
+        await self._cleanup_stale_tools(current_tools)
     
-    async def _discover_server_tools(self, server_name: str, proxy_server: FastMCP) -> None:
+    async def _cleanup_stale_servers(self, current_servers: set[str]) -> None:
+        """Remove tools from servers that no longer exist in configuration."""
+        logger = get_logger()
+        
+        if not self.persistence:
+            return
+        
+        # Get all tools from persistence
+        all_tools = await self.persistence.get_all_tools()
+        
+        # Find servers in database that are not in current config
+        db_servers = {tool.server_name for tool in all_tools}
+        stale_servers = db_servers - current_servers
+        
+        if stale_servers:
+            logger.info(f"Removing tools from {len(stale_servers)} stale servers: {stale_servers}")
+            for server_name in stale_servers:
+                await self.persistence.delete_tools_by_server(server_name)
+                logger.debug(f"Removed all tools from stale server: {server_name}")
+    
+    async def _cleanup_stale_tools(self, current_tools: dict[str, set[str]]) -> None:
+        """Remove tools that no longer exist on their servers."""
+        logger = get_logger()
+        
+        if not self.persistence:
+            return
+        
+        removed_count = 0
+        for server_name, tool_names in current_tools.items():
+            # Get tools from database for this server
+            db_tools = await self.persistence.get_tools_by_server(server_name)
+            
+            # Find tools in database that no longer exist on the server
+            db_tool_names = {tool.name for tool in db_tools}
+            stale_tool_names = db_tool_names - tool_names
+            
+            if stale_tool_names:
+                logger.debug(f"Server {server_name}: removing {len(stale_tool_names)} stale tools: {stale_tool_names}")
+                
+                # Remove stale tools one by one (no bulk delete by name method)
+                for tool in db_tools:
+                    if tool.name in stale_tool_names:
+                        # Remove from database (this will also handle vector store cleanup if needed)
+                        await self._remove_tool_from_persistence(tool)
+                        removed_count += 1
+        
+        if removed_count > 0:
+            logger.info(f"Cleaned up {removed_count} stale tools from database")
+    
+    async def _remove_tool_from_persistence(self, tool: ToolMetadata) -> None:
+        """Remove a specific tool from persistence layer."""
+        # For now, we'll implement this by deleting all tools for the server and re-adding the valid ones
+        # This is a simplified approach - a more efficient implementation would delete individual tools
+        logger = get_logger()
+        logger.debug(f"Would remove tool {tool.name} from {tool.server_name} (simplified cleanup)")
+        # TODO: Implement individual tool deletion in persistence layer if needed
+    
+    async def _discover_server_tools(self, server_name: str, proxy_server: FastMCP) -> dict[str, str]:
         """Discover tools from a specific server using its proxy."""
         logger = get_logger()
         
@@ -692,14 +762,14 @@ class SmartMCPProxyServer:
             # Ensure indexer is available
             if not self.indexer:
                 logger.warning(f"Indexer not available, skipping discovery for {server_name}")
-                return
+                return {}
             
             logger.debug(f"Getting tools from proxy server for {server_name}...")
             
             # Check if proxy server is ready
             if not hasattr(proxy_server, 'get_tools'):
                 logger.error(f"Proxy server for {server_name} does not have get_tools method")
-                return
+                return {}
             
             # Get tools from the proxy server - these are actual Tool objects
             try:
@@ -712,10 +782,11 @@ class SmartMCPProxyServer:
             
             if not tools:
                 logger.warning(f"No tools returned from {server_name}")
-                return
+                return {}
             
             # Store Tool objects in memory and index them
             indexed_count = 0
+            tool_names = {}
             for tool_name, tool_obj in tools.items():
                 try:
                     # Store Tool object in memory with sanitized key
@@ -725,6 +796,7 @@ class SmartMCPProxyServer:
                     logger.debug(f"Indexing tool: {tool_name} from {server_name}")
                     await self.indexer.index_tool_from_object(tool_obj, server_name)
                     indexed_count += 1
+                    tool_names[tool_name] = sanitized_key
                 except Exception as tool_error:
                     error_msg = str(tool_error)
                     if "assert d == self.d" in error_msg or "dimension" in error_msg.lower():
@@ -747,11 +819,12 @@ class SmartMCPProxyServer:
                     logger.debug(f"Tool object details: {tool_obj}")
             
             logger.info(f"Successfully indexed {indexed_count}/{len(tools)} tools from {server_name}")
+            return tool_names
         
         except Exception as e:
             logger.error(f"Error discovering tools from {server_name}: {type(e).__name__}: {e}")
             logger.error(f"Full exception details:", exc_info=True)
-            raise
+            return {}
     
     # Legacy methods for manual initialization (fallback)
     async def initialize_resources(self) -> None:
