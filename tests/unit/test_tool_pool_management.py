@@ -126,24 +126,39 @@ class TestToolPoolManagement:
     @pytest.mark.asyncio
     async def test_register_proxy_tool_with_metadata(self, mock_server):
         """Test that tool registration includes metadata tracking."""
-        tool_metadata = MagicMock()
-        tool_metadata.name = "test_tool"
-        tool_metadata.server_name = "test_server"
-        tool_metadata.description = "Test description"
-        tool_metadata.params_json = "{}"
+        # Create a mock Tool object (what the implementation expects)
+        from fastmcp.tools.tool import Tool
+        original_tool = MagicMock(spec=Tool)
+        original_tool.name = "test_tool"
+        original_tool.description = "Test description"
+        original_tool.parameters = {}
+        original_tool.tags = []  # Required by Tool.from_tool
+        original_tool.annotations = {}  # Required by Tool.from_tool
+        original_tool.serializer = MagicMock()  # Required by Tool.from_tool
+        # Add other common Tool attributes that might be accessed
+        original_tool.func = MagicMock()
+        original_tool.examples = []
         
         tool_name = "test_server_test_tool"
+        server_name = "test_server"
         score = 0.75
         
         # Mock dependencies
-        mock_server.proxy_servers = {"test_server": MagicMock()}
+        mock_server.proxy_servers = {server_name: MagicMock()}
         mock_server.mcp.add_tool = MagicMock()
         
-        with patch('smart_mcp_proxy.server.mcp_server.Tool') as mock_tool_class:
-            mock_tool = MagicMock()
-            mock_tool_class.from_function.return_value = mock_tool
+        with patch('fastmcp.tools.tool.Tool.from_tool') as mock_from_tool:
+            mock_proxified_tool = MagicMock()
+            mock_from_tool.return_value = mock_proxified_tool
             
-            await mock_server._register_proxy_tool(tool_metadata, tool_name, score)
+            await mock_server._register_proxy_tool(original_tool, tool_name, score, server_name)
+        
+        # Verify Tool.from_tool was called with correct parameters
+        mock_from_tool.assert_called_once()
+        call_args = mock_from_tool.call_args
+        assert call_args[1]['tool'] == original_tool
+        assert call_args[1]['name'] == tool_name
+        assert 'transform_fn' in call_args[1]
         
         # Verify metadata was tracked
         assert tool_name in mock_server.tool_pool_metadata
@@ -155,6 +170,10 @@ class TestToolPoolManagement:
         
         # Verify tool was registered
         assert tool_name in mock_server.current_tool_registrations
+        assert tool_name in mock_server.registered_tools
+        
+        # Verify the proxified tool was added to FastMCP
+        mock_server.mcp.add_tool.assert_called_once_with(mock_proxified_tool)
     
     def test_tool_weight_comparison(self, mock_server):
         """Test that tool weights are calculated correctly for comparison."""

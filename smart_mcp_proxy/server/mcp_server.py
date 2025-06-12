@@ -4,26 +4,39 @@ import json
 import os
 import sys
 import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.tools.tool import Tool  # type: ignore[import-not-found]
-
+import mcp.types as types
 from ..models.schemas import ProxyConfig, ServerConfig, ToolRegistration, SearchResult, EmbedderType
 from ..persistence.facade import PersistenceFacade
 from ..indexer.facade import IndexerFacade
 from ..logging import get_logger, configure_logging
 from .config import ConfigLoader
 
+logger = get_logger()
+
+from mcp.server.lowlevel.server import NotificationOptions
+
+# Patch the NotificationOptions constructor to change defaults
+original_init = NotificationOptions.__init__
+
+def patched_init(self, prompts_changed=False, resources_changed=False, tools_changed=True):
+    original_init(self, prompts_changed, resources_changed, tools_changed)
+
+NotificationOptions.__init__ = patched_init
 
 class SmartMCPProxyServer:
     """Smart MCP Proxy server using FastMCP."""
     
     def __init__(self, config_path: str = "mcp_config.json"):
-        self.config_path = config_path
-        self.config_loader = ConfigLoader(config_path)
+        # Check environment variable first, then use provided path, then default
+        self.config_path = os.getenv("MCP_CONFIG_PATH", config_path)
+        self.config_loader = ConfigLoader(self.config_path)
         self.config = self.config_loader.load_config()
         
         # Transport configuration from environment variables
@@ -33,6 +46,10 @@ class SmartMCPProxyServer:
         
         # Tool pool limit configuration
         self.tools_limit = int(os.getenv("SP_TOOLS_LIMIT", "15"))
+        
+        # Output truncation configuration
+        truncate_len = os.getenv("SP_TRUNCATE_OUTPUT_LEN")
+        self.truncate_output_len = int(truncate_len) if truncate_len else None
         
         # Will be initialized in lifespan
         self.persistence: PersistenceFacade | None = None
@@ -77,8 +94,8 @@ class SmartMCPProxyServer:
         configure_logging(log_level)
         logger = get_logger()
         
-        # Check for config file
-        config_path = os.getenv("MCP_CONFIG_PATH", self.config_path)
+        # Check for config file (already resolved in __init__)
+        config_path = self.config_path
         
         if not Path(config_path).exists():
             logger.warning(f"Configuration file not found: {config_path}")
@@ -213,6 +230,7 @@ class SmartMCPProxyServer:
             Returns:
                 JSON string with discovered tools information
             """
+            logger = get_logger()
             try:
                 # Ensure indexer is initialized
                 if not self.indexer:
@@ -227,7 +245,7 @@ class SmartMCPProxyServer:
                 # Prepare tools for registration
                 tools_to_register = []
                 for result in results:
-                    tool_name = f"{result.tool.server_name}_{result.tool.name}"
+                    tool_name = self._sanitize_tool_name(result.tool.server_name, result.tool.name)
                     
                     # Skip if already registered
                     if tool_name in self.current_tool_registrations:
@@ -240,14 +258,12 @@ class SmartMCPProxyServer:
                             )
                         continue
                     
-                    # Get the actual Tool object from memory
-                    tool_key = f"{result.tool.server_name}_{result.tool.name}"
-                    if tool_key in self.proxified_tools:
-                        actual_tool = self.proxified_tools[tool_key]
+                    # Get the actual Tool object from memory using sanitized key
+                    if tool_name in self.proxified_tools:
+                        actual_tool = self.proxified_tools[tool_name]
                         tools_to_register.append((tool_name, actual_tool, result.score))
                     else:
-                        logger = get_logger()
-                        logger.warning(f"Tool {tool_key} not found in proxified_tools memory")
+                        logger.warning(f"Tool {tool_name} not found in proxified_tools memory")
                 
                 # Enforce pool limit before registering new tools
                 evicted_tools = []
@@ -258,13 +274,19 @@ class SmartMCPProxyServer:
                 # Register new tools using actual Tool objects
                 newly_registered = []
                 for tool_name, actual_tool, score in tools_to_register:
-                    await self._register_proxy_tool(actual_tool, tool_name, score)
+                    # Find the original server name from results
+                    original_server_name = None
+                    for result in results:
+                        if self._sanitize_tool_name(result.tool.server_name, result.tool.name) == tool_name:
+                            original_server_name = result.tool.server_name
+                            break
+                    await self._register_proxy_tool(actual_tool, tool_name, score, original_server_name)
                     newly_registered.append(tool_name)
                 
                 # Prepare tool information
                 registered_tools = []
                 for result in results:
-                    tool_name = f"{result.tool.server_name}_{result.tool.name}"
+                    tool_name = self._sanitize_tool_name(result.tool.server_name, result.tool.name)
                     registered_tools.append({
                         "name": tool_name,
                         "original_name": result.tool.name,
@@ -278,6 +300,19 @@ class SmartMCPProxyServer:
                 if evicted_tools:
                     message += f", evicted {len(evicted_tools)} tools to stay within limit ({self.tools_limit})"
                 
+                # Notify connected clients that the available tools list has changed so they can refresh
+                try:
+                    if newly_registered or evicted_tools:
+                        # Standard notification (proper MCP way)
+                        await self.mcp._mcp_server.request_context.session.send_notification(
+                            types.ToolListChangedNotification(method="notifications/tools/list_changed"),
+                            related_request_id=self.mcp._mcp_server.request_context.request_id
+                        )
+                        logger.debug(f"Sent tools/list_changed notification {self.mcp._mcp_server.request_context.request_id}")
+                        
+                except Exception as notify_err:
+                    logger.warning(f"Failed to emit tools/list_changed notification: {notify_err}")
+                
                 return json.dumps({
                     "message": message,
                     "tools": registered_tools,
@@ -290,6 +325,125 @@ class SmartMCPProxyServer:
             
             except Exception as e:
                 return json.dumps({"error": str(e)})
+    
+    def _sanitize_tool_name(self, server_name: str, tool_name: str) -> str:
+        """Sanitize tool name to comply with Google Gemini API requirements.
+        
+        Google Gemini API Requirements (more strict than general MCP):
+        - Must start with letter or underscore
+        - Only lowercase letters (a-z), numbers (0-9), underscores (_)
+        - Maximum 63 characters (safety margin)
+        - No dots or dashes (unlike general MCP spec)
+        
+        Args:
+            server_name: Name of the server
+            tool_name: Original tool name
+            
+        Returns:
+            Sanitized tool name that complies with Google Gemini API
+        """
+        import re
+        
+        # First sanitize individual parts - be more aggressive for Google API
+        # Convert to lowercase and replace anything that isn't alphanumeric with underscore
+        server_clean = re.sub(r'[^a-z0-9_]', '_', server_name.lower())
+        tool_clean = re.sub(r'[^a-z0-9_]', '_', tool_name.lower())
+        
+        # Remove consecutive underscores
+        server_clean = re.sub(r'_+', '_', server_clean)
+        tool_clean = re.sub(r'_+', '_', tool_clean)
+        
+        # Remove leading/trailing underscores from parts
+        server_clean = server_clean.strip('_')
+        tool_clean = tool_clean.strip('_')
+        
+        # If parts are empty after cleaning, use defaults
+        if not server_clean:
+            server_clean = "server"
+        if not tool_clean:
+            tool_clean = "tool"
+        
+        # Combine server and tool name
+        combined = f"{server_clean}_{tool_clean}"
+        
+        # Ensure starts with letter or underscore (Google requirement)
+        if not re.match(r'^[a-z_]', combined):
+            combined = f"tool_{combined}"
+        
+        # Truncate to 63 chars if needed
+        if len(combined) > 63:
+            # Try to keep server prefix if possible
+            if '_' in combined:
+                parts = combined.split('_', 1)
+                server_part = parts[0]
+                tool_part = parts[1]
+                
+                # Reserve space for server part + underscore
+                available_space = 63 - len(server_part) - 1
+                if available_space > 3:  # Keep at least 3 chars of tool name
+                    truncated = f"{server_part}_{tool_part[:available_space]}"
+                else:
+                    # Not enough space for meaningful server prefix
+                    truncated = combined[:63]
+            else:
+                truncated = combined[:63]
+            
+            # Ensure doesn't end with underscore
+            truncated = truncated.rstrip('_')
+            
+            # If we stripped all chars, add fallback
+            if not truncated:
+                truncated = "tool"
+            
+            combined = truncated
+        
+        # Final validation - ensure it still starts correctly and is valid
+        if not re.match(r'^[a-z_]', combined):
+            combined = f"tool_{combined}"
+            # Re-truncate if needed
+            if len(combined) > 63:
+                combined = combined[:63].rstrip('_')
+        
+        # Final fallback if somehow we ended up empty
+        if not combined:
+            combined = "tool"
+        
+        # Debug logging for validation
+        logger = get_logger()
+        if (len(combined) > 63 or 
+            not re.match(r'^[a-z_][a-z0-9_]*$', combined) or
+            combined.endswith('_')):
+            logger.warning(f"Tool name may still be invalid: '{server_name}' + '{tool_name}' -> '{combined}' (len={len(combined)})")
+        
+        return combined
+    
+    def _truncate_output(self, output: str) -> str:
+        """Truncate output if it exceeds the configured length limit.
+        
+        Args:
+            output: The original output string
+            
+        Returns:
+            Truncated output with placeholder if needed, or original if within limit
+        """
+        if not self.truncate_output_len or len(output) <= self.truncate_output_len:
+            return output
+        
+        # Calculate how many chars to show at start and end
+        last_chars = 50
+        first_chars = self.truncate_output_len - last_chars - len(" <truncated by smart mcp proxy> ")
+        
+        if first_chars <= 0:
+            # If truncate length is too small, just show beginning
+            return output[:self.truncate_output_len] + " <truncated by smart mcp proxy>"
+        
+        truncated = (
+            output[:first_chars] + 
+            " <truncated by smart mcp proxy> " + 
+            output[-last_chars:]
+        )
+        
+        return truncated
     
     def _calculate_tool_weight(self, score: float, added_timestamp: float) -> float:
         """Calculate weighted score for tool eviction based on score and freshness.
@@ -373,7 +527,34 @@ class SmartMCPProxyServer:
         logger = get_logger()
         logger.debug(f"Evicted tool from pool: {tool_name}")
     
-    async def _register_proxy_tool(self, tool_metadata: Any, tool_name: str, score: float = 0.0) -> None:
+    async def _send_unsolicited_tools_list(self) -> None:
+        """EXPERIMENTAL: Send unsolicited tools list for testing purposes.
+        
+        This violates MCP protocol but can be useful for testing.
+        """
+        logger = get_logger()
+        try:
+            # Get current tools from FastMCP
+            current_tools = await self.mcp._mcp_list_tools()
+            
+            # Create ListToolsResult
+            tools_result = types.ListToolsResult(tools=current_tools)
+            
+            
+            try:
+                await self.mcp._mcp_server.request_context.session._send_response(
+                    request_id=999, #self.mcp._mcp_server.request_context.request_id,
+                    response=tools_result
+                )
+                logger.debug(f"Sent experimental unsolicited tools list as response: {len(current_tools)} tools")
+            
+            except Exception as e2:
+                logger.debug(f"Method 2 (dummy response) failed: {e2}")
+        
+        except Exception as e:
+            logger.warning(f"Error in experimental unsolicited tools list: {e}")
+    
+    async def _register_proxy_tool(self, tool_metadata: Any, tool_name: str, score: float = 0.0, server_name: str | None = None) -> None:
         """Register a single tool as a proxy that calls the upstream server transparently using Tool.from_tool."""
         from fastmcp.tools.tool import Tool
 
@@ -384,11 +565,12 @@ class SmartMCPProxyServer:
             return
 
         original_tool: Tool = tool_metadata
-        # Extract server_name from tool_name (format: servername_toolname)
-        if '_' in tool_name:
-            server_name = tool_name.split('_', 1)[0]
-        else:
-            server_name = 'unknown'
+        # Use provided server_name or extract from tool_name (format: servername_toolname)
+        if server_name is None:
+            if '_' in tool_name:
+                server_name = tool_name.split('_', 1)[0]
+            else:
+                server_name = 'unknown'
         original_tool_name = original_tool.name
 
         # Define a transform_fn that forwards the call to the upstream server
@@ -398,13 +580,20 @@ class SmartMCPProxyServer:
                 return f"Error: Server {server_name} not available"
             # Forward the call to the upstream tool with original parameters
             result = await proxy_server._mcp_call_tool(original_tool_name, kwargs)
+            output = ""
             if result and len(result) > 0:
                 content = result[0]
                 if hasattr(content, 'text'):
-                    return content.text
+                    output = content.text
                 elif isinstance(content, dict) and 'text' in content:
-                    return content['text']
-            return str(result)
+                    output = content['text']
+                else:
+                    output = str(result)
+            else:
+                output = str(result)
+            
+            # Apply output truncation if configured
+            return self._truncate_output(output)
 
         # Create a proxified tool using Tool.from_tool
         proxified_tool = Tool.from_tool(
@@ -529,9 +718,9 @@ class SmartMCPProxyServer:
             indexed_count = 0
             for tool_name, tool_obj in tools.items():
                 try:
-                    # Store Tool object in memory with server context
-                    tool_key = f"{server_name}_{tool_name}"
-                    self.proxified_tools[tool_key] = tool_obj
+                    # Store Tool object in memory with sanitized key
+                    sanitized_key = self._sanitize_tool_name(server_name, tool_name)
+                    self.proxified_tools[sanitized_key] = tool_obj
                     
                     logger.debug(f"Indexing tool: {tool_name} from {server_name}")
                     await self.indexer.index_tool_from_object(tool_obj, server_name)
