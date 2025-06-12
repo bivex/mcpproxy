@@ -5,11 +5,6 @@ import os
 from typing import Any
 import numpy as np
 
-try:
-    import openai
-except ImportError:
-    openai = None
-
 from .base import BaseEmbedder
 
 
@@ -17,8 +12,16 @@ class OpenAIEmbedder(BaseEmbedder):
     """OpenAI embedder using text-embedding-ada-002."""
     
     def __init__(self, model: str = "text-embedding-ada-002", api_key: str | None = None):
-        if openai is None:
-            raise ImportError("openai package is required")
+        try:
+            import openai
+        except ImportError:
+            print(f"\n❌ ERROR: OpenAI embeddings requires openai but it's not installed.")
+            print(f"   To use OpenAI embeddings, install with:")
+            print(f"   pip install mcpproxy[openai]")
+            print(f"   or pip install openai")
+            print()
+            import sys
+            sys.exit(1)
         
         self.model = model
         self.client = openai.AsyncOpenAI(

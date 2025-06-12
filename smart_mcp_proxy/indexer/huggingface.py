@@ -4,11 +4,6 @@ import asyncio
 from typing import Any
 import numpy as np
 
-try:
-    from sentence_transformers import SentenceTransformer
-except ImportError:
-    SentenceTransformer = None
-
 from .base import BaseEmbedder
 
 
@@ -16,8 +11,16 @@ class HuggingFaceEmbedder(BaseEmbedder):
     """HuggingFace sentence transformer embedder."""
     
     def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
-        if SentenceTransformer is None:
-            raise ImportError("sentence-transformers package is required")
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError:
+            print(f"\n❌ ERROR: HuggingFace embeddings requires sentence-transformers but it's not installed.")
+            print(f"   To use HuggingFace embeddings, install with:")
+            print(f"   pip install mcpproxy[huggingface]")
+            print(f"   or pip install sentence-transformers")
+            print()
+            import sys
+            sys.exit(1)
         
         self.model_name = model_name
         self.model = SentenceTransformer(model_name)

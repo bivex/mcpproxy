@@ -377,8 +377,8 @@ wheels = [
 
 [[package]]
 name = "fastmcp"
-version = "2.7.2.dev84+89c1cff"
-source = { git = "https://github.com/jlowin/fastmcp.git?rev=main#89c1cff199e8f4280db0948ea7e799d8a8da5caa" }
+version = "2.8.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "authlib" },
     { name = "exceptiongroup" },
@@ -388,6 +388,10 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "rich" },
     { name = "typer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8d/a3/d5b2c47b25d13cca8108e077bf4a72b255b113fb525f4c22ce9ca5af9b08/fastmcp-2.8.0.tar.gz", hash = "sha256:8a6427ece23d0a324d4be2043598c8b89a91b2b5688873d8ae1e7aeaa7960513", size = 2554559 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2c/05/b9b0ee091578ff37da8ef0bee8fff80bed95daff61834982a6064e3e327f/fastmcp-2.8.0-py3-none-any.whl", hash = "sha256:772468e98dacd55ab3381f49dd2583341c41b0e5ef0d9c7620fd43833d949c0c", size = 137492 },
 ]
 
 [[package]]
@@ -1707,7 +1711,7 @@ requires-dist = [
     { name = "bm25s", extras = ["full"], specifier = ">=0.2.13" },
     { name = "build", specifier = ">=1.2.2.post1" },
     { name = "faiss-cpu", specifier = ">=1.11.0" },
-    { name = "fastmcp", git = "https://github.com/jlowin/fastmcp.git?rev=main" },
+    { name = "fastmcp", specifier = ">=2.8.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "numpy", specifier = ">=2.2.6" },
     { name = "openai", specifier = ">=1.86.0" },

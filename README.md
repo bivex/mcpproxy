@@ -10,6 +10,7 @@ A federating gateway that sits between AI agents and multiple Model Context Prot
 - **FastMCP Integration**: Built on FastMCP v2 for robust server runtime and client capabilities
 - **Persistent Indexing**: SQLite + Faiss storage for fast tool lookup and change detection
 - **MCP Spec Compliant**: Emits proper `notifications/tools/list_changed` events
+- **Flexible Dependencies**: Optional dependencies for different backends to minimize install size
 
 ## Architecture
 
@@ -29,11 +30,25 @@ A federating gateway that sits between AI agents and multiple Model Context Prot
 
 ### 1. Installation
 
+Choose your installation based on the embedding backend you want to use:
+
 ```bash
+# Basic installation with BM25 (lexical search, no ML dependencies)
+pip install mcpproxy
+
+# Or with specific backends:
+pip install mcpproxy[bm25]         # Explicit BM25 (same as basic)
+pip install mcpproxy[huggingface]  # HuggingFace + vector search
+pip install mcpproxy[openai]       # OpenAI embeddings + vector search
+pip install mcpproxy[all]          # All backends available
+
+# Development install
 git clone <repository>
 cd smart-mcp-proxy
-pip install -e .
+pip install -e .[all]
 ```
+
+The proxy will automatically check for required dependencies and provide helpful error messages if you try to use a backend without the required packages installed.
 
 ### 2. Configuration
 
@@ -87,6 +102,10 @@ This creates `mcp_config.json`:
 ### 4. Start the Proxy
 
 ```bash
+# Using the installed script
+mcpproxy
+
+# Or directly with Python
 python main.py
 ```
 

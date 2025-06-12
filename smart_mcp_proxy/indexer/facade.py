@@ -7,11 +7,10 @@ import numpy as np
 
 from .base import BaseEmbedder
 from .bm25 import BM25Embedder
-from .huggingface import HuggingFaceEmbedder
-from .openai import OpenAIEmbedder
 from ..models.schemas import EmbedderType, ToolMetadata, SearchResult
 from ..persistence.facade import PersistenceFacade
 from ..utils.hashing import compute_tool_hash
+from ..utils.dependencies import check_embedder_dependencies
 
 
 class IndexerFacade:
@@ -27,6 +26,9 @@ class IndexerFacade:
     
     def _create_embedder(self, embedder_type: EmbedderType, hf_model: str | None, index_dir: str | None) -> BaseEmbedder:
         """Create embedder based on type."""
+        # Check dependencies before creating embedder
+        check_embedder_dependencies(embedder_type.value)
+        
         if embedder_type == EmbedderType.BM25:
             embedder = BM25Embedder(index_dir)
             # Try to load existing index
@@ -34,9 +36,11 @@ class IndexerFacade:
                 embedder.load_index()
             return embedder
         elif embedder_type == EmbedderType.HF:
+            from .huggingface import HuggingFaceEmbedder
             model_name = hf_model or "sentence-transformers/all-MiniLM-L6-v2"
             return HuggingFaceEmbedder(model_name)
         elif embedder_type == EmbedderType.OPENAI:
+            from .openai import OpenAIEmbedder
             return OpenAIEmbedder()
         else:
             raise ValueError(f"Unknown embedder type: {embedder_type}")

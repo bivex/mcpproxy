@@ -84,7 +84,21 @@ A3[company-mcp-server-with-oauth]
 
 The proxy chooses the search driver at startup; mixed‑mode hybrid search (lexical + vector) is possible in future.
 
-### 4.3 Tool Pool Management
+### 4.3 Flexible Dependencies
+
+The package supports optional dependencies to minimize installation size:
+
+```bash
+pip install mcpproxy            # BM25 only (no ML dependencies)
+pip install mcpproxy[bm25]      # Explicit BM25
+pip install mcpproxy[huggingface] # HuggingFace + Faiss + BM25
+pip install mcpproxy[openai]    # OpenAI + Faiss + BM25
+pip install mcpproxy[all]       # All backends
+```
+
+If a user tries to use HuggingFace or OpenAI embeddings without the required packages, the proxy will show a helpful error message and exit with installation instructions.
+
+### 4.4 Tool Pool Management
 
 The proxy maintains an active pool of registered tools limited by `SP_TOOLS_LIMIT`. When the limit is exceeded, tools are evicted based on a weighted score:
 
