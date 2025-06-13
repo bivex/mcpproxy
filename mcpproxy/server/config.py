@@ -28,10 +28,10 @@ class ConfigLoader:
             mcp_servers[name] = ServerConfig(**server_data)
 
         # Get embedder configuration from environment
-        embedder_type = EmbedderType(os.getenv("SP_EMBEDDER", "BM25"))
-        hf_model = os.getenv("SP_HF_MODEL")
-        top_k = int(os.getenv("SP_TOP_K", "5"))
-        tool_name_limit = int(os.getenv("SP_TOOL_NAME_LIMIT", "60"))
+        embedder_type = EmbedderType(os.getenv("MCPPROXY_EMBEDDER", "BM25"))
+        hf_model = os.getenv("MCPPROXY_HF_MODEL")
+        top_k = int(os.getenv("MCPPROXY_TOP_K", "5"))
+        tool_name_limit = int(os.getenv("MCPPROXY_TOOL_NAME_LIMIT", "60"))
 
         return ProxyConfig(
             mcp_servers=mcp_servers,
@@ -65,7 +65,7 @@ class ConfigLoader:
         logger = get_logger()
         logger.info(f"Sample configuration created at {output_path}")
         logger.info("Set environment variables:")
-        logger.info("  SP_EMBEDDER=BM25|HF|OPENAI")
-        logger.info("  SP_HF_MODEL=sentence-transformers/all-MiniLM-L6-v2")
+        logger.info("  MCPPROXY_EMBEDDER=BM25|HF|OPENAI")
+        logger.info("  MCPPROXY_HF_MODEL=sentence-transformers/all-MiniLM-L6-v2")
         logger.info("  OPENAI_API_KEY=your_key_here")
-        logger.info("  SP_TOOL_NAME_LIMIT=60  # Maximum tool name length")
+        logger.info("  MCPPROXY_TOOL_NAME_LIMIT=60  # Maximum tool name length")

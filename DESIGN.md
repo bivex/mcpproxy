@@ -77,11 +77,12 @@ A3[company-mcp-server-with-oauth]
 
 | Variable         | Allowed values                                | Default |
 | ---------------- | --------------------------------------------- | ------- |
-| `SP_EMBEDDER`    | `BM25`, `HF`, `OPENAI`                        | `BM25`  |
-| `SP_HF_MODEL`    | e.g. `sentence-transformers/all-MiniLM-L6-v2` | —       |
-| `SP_TOOLS_LIMIT` | Integer (1-100)                               | `15`    |
-| `SP_TOOL_NAME_LIMIT` | Integer (10-200)                          | `60`    |
-| `OPENAI_API_KEY` | your key                                      | —       |
+| `MCPPROXY_EMBEDDER`    | `BM25`, `HF`, `OPENAI`                        | `BM25`  |
+| `MCPPROXY_HF_MODEL`    | e.g. `sentence-transformers/all-MiniLM-L6-v2` | —       |
+| `MCPPROXY_TOOLS_LIMIT` | Integer (1-100)                               | `15`    |
+| `MCPPROXY_TOOL_NAME_LIMIT` | Integer (10-200)                          | `60`    |
+| `MCPPROXY_TRANSPORT` | `stdio`, `streamable-http`, `sse` | `stdio` |
+| `MCPPROXY_LIST_CHANGED_EXEC` | command to execute after tools list changes | — |
 
 The proxy chooses the search driver at startup; mixed‑mode hybrid search (lexical + vector) is possible in future.
 
@@ -90,18 +91,18 @@ The proxy chooses the search driver at startup; mixed‑mode hybrid search (lexi
 The package supports optional dependencies to minimize installation size:
 
 ```bash
-pip install mcpproxy            # BM25 only (no ML dependencies)
-pip install mcpproxy[bm25]      # Explicit BM25
-pip install mcpproxy[huggingface] # HuggingFace + Faiss + BM25
-pip install mcpproxy[openai]    # OpenAI + Faiss + BM25
-pip install mcpproxy[all]       # All backends
+pip install smart-mcp-proxy            # BM25 only (no ML dependencies)
+pip install smart-mcp-proxy[bm25]      # Explicit BM25
+pip install smart-mcp-proxy[huggingface] # HuggingFace + Faiss + BM25
+pip install smart-mcp-proxy[openai]    # OpenAI + Faiss + BM25
+pip install smart-mcp-proxy[all]       # All backends
 ```
 
 If a user tries to use HuggingFace or OpenAI embeddings without the required packages, the proxy will show a helpful error message and exit with installation instructions.
 
 ### 4.4 Tool Pool Management
 
-The proxy maintains an active pool of registered tools limited by `SP_TOOLS_LIMIT`. When the limit is exceeded, tools are evicted based on a weighted score:
+The proxy maintains an active pool of registered tools limited by `MCPPROXY_TOOLS_LIMIT`. When the limit is exceeded, tools are evicted based on a weighted score:
 
 ```
 weighted_score = (search_score * 0.7) + (freshness_score * 0.3)

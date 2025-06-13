@@ -4,6 +4,48 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
+## Cursor IDE Integration
+
+To use mcpproxy in Cursor IDE, add this configuration to your `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "mcp-proxy": {
+      "command": "mcpproxy",
+      "env": {
+        "MCPPROXY_CONFIG_PATH": "/Users/user/.cursor/mcp_proxy.json",
+        "MCPPROXY_LIST_CHANGED_EXEC": "touch $HOME/.cursor/mcp.json"
+      }
+    }
+  }
+}
+```
+
+Then create a separate `~/.cursor/mcp_proxy.json` with your actual MCP servers:
+
+```json
+{
+  "mcpServers": {
+    "company-mcp-server-prod": {
+      "command": "uvx",
+      "args": ["--from", "mcp-company-python@git+https://github.com/company/mcp-company.git", "company-mcp-server"],
+      "env": {
+        "COMPANY_TOKEN": "${COMPANY_TOKEN}",
+        "PORT": "9090"
+      }
+    },
+    "company-docs": {
+      "url": "http://localhost:8000/sse"
+    }
+  }
+}
+```
+
+**Important**: The `mcp_proxy.json` must be a different file than `mcp.json` to avoid circular proxy connections. The proxy configuration file has the same format as Cursor's MCP configuration but contains the actual MCP servers you want to federate.
+
+---
+
 A federating gateway that sits between AI agents and multiple Model Context Protocol (MCP) servers, providing intelligent tool discovery and dynamic registration.
 
 🌐 **Website**: [mcpproxy.app](https://mcpproxy.app)
@@ -58,86 +100,25 @@ pip install -e .[all]
 
 The proxy will automatically check for required dependencies and provide helpful error messages if you try to use a backend without the required packages installed.
 
-### 2. Configuration
-
-Set environment variables:
-
-```bash
-export SP_EMBEDDER=BM25  # or HF, OPENAI
-export SP_HF_MODEL=sentence-transformers/all-MiniLM-L6-v2  # if using HF
-export OPENAI_API_KEY=your_key  # if using OpenAI
-```
-
-### 3. Create Configuration
-
-Run the proxy to create a sample config:
-
-```bash
-python main.py
-```
-
-This creates `mcp_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "company-mcp-server-http-prod": {
-      "url": "http://localhost:8081/mcp"
-    },
-    "company-docs": {
-      "url": "http://localhost:8000/sse"
-    },
-    "company-mcp-server-with-oauth": {
-      "url": "http://localhost:8080/mcp",
-      "oauth": true
-    },
-    "company-mcp-server-prod": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "mcp-company-python@git+https://github.com/algis-dumbris/mcp-company.git",
-        "company-mcp-server"
-      ],
-      "env": {
-        "COMPANY_TOKEN": "${COMPANY_TOKEN}",
-        "PORT": "9090"
-      }
-    }
-  }
-}
-```
-
-### 4. Start the Proxy
+### 2. Start the Proxy
 
 ```bash
 # Using the installed script
-smart-mcp-proxy
-
-# Or directly with Python
-python main.py
+mcpproxy
 ```
 
 The proxy will:
 1. Discover tools from all configured MCP servers
 2. Index them using the chosen embedding backend
-3. Start FastMCP server on `localhost:8000`
+3. Start MCP server, by default transport is stdio, you can use MCPPROXY_TRANSPORT to change it to streamable-http or sse
 
 ## Usage
+### Cursor IDE
+
+See example on the top of the [README.md](README.md) file.
 
 ### For AI Agents
-
-Connect to the proxy as a standard MCP server. Use the `retrieve_tools` function:
-
-```python
-# Agent calls this to discover tools
-result = await client.call_tool("retrieve_tools", {"query": "create cloud instance"})
-
-# Proxy automatically registers relevant tools, now available:
-instance = await client.call_tool("company-prod_create_instance", {
-    "name": "my-instance",
-    "flavor": "standard-2-4"
-})
-```
+TBD
 
 ### Programmatic Usage
 
@@ -180,15 +161,16 @@ mcpproxy/
 
 | Variable         | Values                        | Default | Description |
 |------------------|-------------------------------|---------|-------------|
-| `SP_EMBEDDER`    | `BM25`, `HF`, `OPENAI`        | `BM25`  | Embedding backend |
-| `SP_HF_MODEL`    | HuggingFace model name        | `sentence-transformers/all-MiniLM-L6-v2` | HF model |
-| `SP_TOP_K`       | Integer                       | `5`     | Number of tools to register |
-| `SP_TOOL_NAME_LIMIT` | Integer                   | `60`    | Maximum tool name length |
-| `SP_LIST_CHANGED_EXEC` | Shell command             | -       | External command to execute after tool changes (see [Client Compatibility](#client-compatibility)) |
+| `MCPPROXY_EMBEDDER`    | `BM25`, `HF`, `OPENAI`        | `BM25`  | Embedding backend |
+| `MCPPROXY_HF_MODEL`    | HuggingFace model name        | `sentence-transformers/all-MiniLM-L6-v2` | HF model |
+| `MCPPROXY_TOP_K`       | Integer                       | `5`     | Number of tools to register |
+| `MCPPROXY_TOOL_NAME_LIMIT` | Integer                   | `60`    | Maximum tool name length |
+| `MCPPROXY_LIST_CHANGED_EXEC` | Shell command             | -       | External command to execute after tool changes (see [Client Compatibility](#client-compatibility)) |
 | `OPENAI_API_KEY` | Your OpenAI API key           | -       | Required for OpenAI embedder |
-| `MCP_CONFIG_PATH`| Path to config file           | `mcp_config.json` | Config file location |
-| `PROXY_HOST`     | Host to bind                  | `localhost` | Server host |
-| `PROXY_PORT`     | Port to bind                  | `8000`  | Server port |
+| `MCPPROXY_CONFIG_PATH`| Path to config file           | `mcp_config.json` | Config file location |
+| `MCPPROXY_HOST`     | Host to bind                  | `localhost` | Server host |
+| `MCPPROXY_PORT`     | Port to bind                  | `8000`  | Server port |
+| `MCPPROXY_TRANSPORT` | Transport to use              | `stdio` | Transport to use |
 
 ## Client Compatibility
 
@@ -198,14 +180,14 @@ Some MCP clients (like Cursor IDE) don't properly handle the standard `tools/lis
 
 #### For Cursor IDE
 
-Set the `SP_LIST_CHANGED_EXEC` environment variable to touch the MCP configuration file:
+Set the `MCPPROXY_LIST_CHANGED_EXEC` environment variable to touch the MCP configuration file:
 
 ```bash
 # For macOS/Linux
-export SP_LIST_CHANGED_EXEC="touch $HOME/.cursor/mcp.json"
+export MCPPROXY_LIST_CHANGED_EXEC="touch $HOME/.cursor/mcp.json"
 
 # For Windows (PowerShell)
-$env:SP_LIST_CHANGED_EXEC = "cmd /c copy `"$HOME\.cursor\mcp.json`" +,,"
+$env:MCPPROXY_LIST_CHANGED_EXEC = "cmd /c copy `"$HOME\.cursor\mcp.json`" +,,"
 ```
 
 This causes Cursor to detect the config file change and refresh its tool list.
@@ -214,12 +196,12 @@ This causes Cursor to detect the config file change and refresh its tool list.
 
 1. When you call `retrieve_tools`, the proxy registers new tools
 2. Standard `tools/list_changed` notification is sent (proper MCP way)
-3. If `SP_LIST_CHANGED_EXEC` is set, the command is executed asynchronously
+3. If `MCPPROXY_LIST_CHANGED_EXEC` is set, the command is executed asynchronously
 4. The command triggers the MCP client to refresh its tool list
 
 #### Security Note
 
-⚠️ **Important**: The command in `SP_LIST_CHANGED_EXEC` is executed with shell privileges. Only use trusted commands and never set this variable to user-provided input.
+⚠️ **Important**: The command in `MCPPROXY_LIST_CHANGED_EXEC` is executed with shell privileges. Only use trusted commands and never set this variable to user-provided input.
 
 #### When Not to Use
 

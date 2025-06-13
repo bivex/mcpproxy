@@ -58,7 +58,7 @@ class TestConfigLoader:
         config_file = self.create_sample_config_file(config_data)
         
         try:
-            with patch.dict(os.environ, {"SP_TOOL_NAME_LIMIT": "40"}, clear=True):
+            with patch.dict(os.environ, {"MCPPROXY_TOOL_NAME_LIMIT": "40"}, clear=True):
                 loader = ConfigLoader(config_file)
                 config = loader.load_config()
                 
@@ -84,10 +84,10 @@ class TestConfigLoader:
         
         try:
             env_vars = {
-                "SP_EMBEDDER": "HF",
-                "SP_HF_MODEL": "custom-model",
-                "SP_TOP_K": "10",
-                "SP_TOOL_NAME_LIMIT": "80"
+                "MCPPROXY_EMBEDDER": "HF",
+                "MCPPROXY_HF_MODEL": "custom-model",
+                "MCPPROXY_TOP_K": "10",
+                "MCPPROXY_TOOL_NAME_LIMIT": "80"
             }
             
             with patch.dict(os.environ, env_vars, clear=True):
@@ -115,7 +115,7 @@ class TestConfigLoader:
         config_file = self.create_sample_config_file(config_data)
         
         try:
-            with patch.dict(os.environ, {"SP_TOOL_NAME_LIMIT": "not_a_number"}, clear=True):
+            with patch.dict(os.environ, {"MCPPROXY_TOOL_NAME_LIMIT": "not_a_number"}, clear=True):
                 loader = ConfigLoader(config_file)
                 
                 # Should raise ValueError when trying to convert invalid string to int
@@ -137,7 +137,7 @@ class TestConfigLoader:
         config_file = self.create_sample_config_file(config_data)
         
         try:
-            with patch.dict(os.environ, {"SP_TOOL_NAME_LIMIT": "0"}, clear=True):
+            with patch.dict(os.environ, {"MCPPROXY_TOOL_NAME_LIMIT": "0"}, clear=True):
                 loader = ConfigLoader(config_file)
                 config = loader.load_config()
                 
@@ -158,7 +158,7 @@ class TestConfigLoader:
         config_file = self.create_sample_config_file(config_data)
         
         try:
-            with patch.dict(os.environ, {"SP_TOOL_NAME_LIMIT": "1000"}, clear=True):
+            with patch.dict(os.environ, {"MCPPROXY_TOOL_NAME_LIMIT": "1000"}, clear=True):
                 loader = ConfigLoader(config_file)
                 config = loader.load_config()
                 
@@ -174,7 +174,7 @@ class TestConfigLoader:
             loader.load_config()
 
     def test_create_sample_config_includes_tool_name_limit_docs(self, caplog):
-        """Test that creating sample config includes documentation about SP_TOOL_NAME_LIMIT."""
+        """Test that creating sample config includes documentation about MCPPROXY_TOOL_NAME_LIMIT."""
         import io
         import sys
         from unittest.mock import patch
@@ -198,7 +198,7 @@ class TestConfigLoader:
             stdout_output = captured_output.getvalue()
             combined_output = log_output + stdout_output
             
-            assert "SP_TOOL_NAME_LIMIT=60" in combined_output
+            assert "MCPPROXY_TOOL_NAME_LIMIT=60" in combined_output
 
     def test_proxy_config_model_defaults(self):
         """Test that ProxyConfig model has correct default values."""

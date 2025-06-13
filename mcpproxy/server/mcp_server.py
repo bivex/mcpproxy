@@ -46,24 +46,24 @@ class SmartMCPProxyServer:
 
     def __init__(self, config_path: str = "mcp_config.json"):
         # Check environment variable first, then use provided path, then default
-        self.config_path = os.getenv("MCP_CONFIG_PATH", config_path)
+        self.config_path = os.getenv("MCPPROXY_CONFIG_PATH", config_path)
         self.config_loader = ConfigLoader(self.config_path)
         self.config = self.config_loader.load_config()
 
         # Transport configuration from environment variables
-        self.transport = os.getenv("SP_TRANSPORT", "stdio")
-        self.host = os.getenv("SP_HOST", "127.0.0.1")
-        self.port = int(os.getenv("SP_PORT", "8000"))
+        self.transport = os.getenv("MCPPROXY_TRANSPORT", "stdio")
+        self.host = os.getenv("MCPPROXY_HOST", "127.0.0.1")
+        self.port = int(os.getenv("MCPPROXY_PORT", "8000"))
 
         # Tool pool limit configuration
-        self.tools_limit = int(os.getenv("SP_TOOLS_LIMIT", "15"))
+        self.tools_limit = int(os.getenv("MCPPROXY_TOOLS_LIMIT", "15"))
 
         # Output truncation configuration
-        truncate_len = os.getenv("SP_TRUNCATE_OUTPUT_LEN")
+        truncate_len = os.getenv("MCPPROXY_TRUNCATE_OUTPUT_LEN")
         self.truncate_output_len = int(truncate_len) if truncate_len else None
 
         # External command execution after tools list changes
-        self.list_changed_exec_cmd = os.getenv("SP_LIST_CHANGED_EXEC")
+        self.list_changed_exec_cmd = os.getenv("MCPPROXY_LIST_CHANGED_EXEC")
 
         # Will be initialized in lifespan
         self.persistence: PersistenceFacade | None = None
@@ -106,7 +106,7 @@ class SmartMCPProxyServer:
     def run(self) -> None:
         """Run the Smart MCP Proxy server with full initialization."""
         # Configure logging with debug level if requested
-        log_level = os.getenv("SP_LOG_LEVEL", "INFO")
+        log_level = os.getenv("MCPPROXY_LOG_LEVEL", "INFO")
         configure_logging(log_level)
         logger = get_logger()
 
@@ -170,7 +170,7 @@ class SmartMCPProxyServer:
         logger = get_logger()
 
         # Check if we should reset data (useful when dimensions change)
-        reset_data = os.getenv("SP_RESET_DATA", "false").lower() == "true"
+        reset_data = os.getenv("MCPPROXY_RESET_DATA", "false").lower() == "true"
 
         # Determine vector dimension based on embedder type
         if self.config.embedder == EmbedderType.BM25:
@@ -391,7 +391,7 @@ class SmartMCPProxyServer:
         Google Gemini API Requirements (more strict than general MCP):
         - Must start with letter or underscore
         - Only lowercase letters (a-z), numbers (0-9), underscores (_)
-        - Maximum length configurable via SP_TOOL_NAME_LIMIT (default 60)
+        - Maximum length configurable via MCPPROXY_TOOL_NAME_LIMIT (default 60)
         - No dots or dashes (unlike general MCP spec)
 
         Args:
@@ -974,7 +974,7 @@ class SmartMCPProxyServer:
                             "1. Existing FAISS index has different dimension than current embedder"
                         )
                         logger.error(
-                            "2. Solution: Set SP_RESET_DATA=true environment variable to reset data"
+                            "2. Solution: Set MCPPROXY_RESET_DATA=true environment variable to reset data"
                         )
                         logger.error("3. Or delete these data files manually:")
                         logger.error("   - tools.faiss (FAISS vector index)")
