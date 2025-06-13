@@ -4,6 +4,37 @@ version = "0.1.0"
 description = "MCP Proxy - A federating gateway for MCP servers with intelligent tool discovery"
 readme = "README.md"
 requires-python = ">=3.11.1"
+license = {text = "MIT"}
+authors = [
+    {name = "Algis Dumbris", email = "a.dumbris@gmail.com"},
+]
+maintainers = [
+    {name = "Algis Dumbris", email = "a.dumbris@gmail.com"},
+]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "proxy",
+    "gateway",
+    "tool-discovery",
+    "fastmcp",
+    "embedding",
+    "search",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Distributed Computing",
+]
 dependencies = [
     "fastmcp>=2.8.0",
     "httpx>=0.28.1",
@@ -46,6 +77,13 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.9.0",
 ]
+
+[project.urls]
+Homepage = "https://mcpproxy.app"
+Documentation = "https://mcpproxy.app"
+Repository = "https://github.com/Dumbris/mcpproxy"
+"Bug Reports" = "https://github.com/Dumbris/mcpproxy/issues"
+"Source Code" = "https://github.com/Dumbris/mcpproxy"
 
 [build-system]
 requires = ["hatchling"]

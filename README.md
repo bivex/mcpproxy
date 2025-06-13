@@ -1,6 +1,14 @@
 # Smart MCP Proxy
 
+[![PyPI version](https://badge.fury.io/py/mcpproxy.svg)](https://badge.fury.io/py/mcpproxy)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+
 A federating gateway that sits between AI agents and multiple Model Context Protocol (MCP) servers, providing intelligent tool discovery and dynamic registration.
+
+🌐 **Website**: [mcpproxy.app](https://mcpproxy.app)
+📦 **PyPI**: [pypi.org/project/mcpproxy](https://pypi.org/project/mcpproxy/)
+🔗 **GitHub**: [github.com/Dumbris/mcpproxy](https://github.com/Dumbris/mcpproxy)
 
 ## Features
 
@@ -43,8 +51,8 @@ pip install mcpproxy[openai]       # OpenAI embeddings + vector search
 pip install mcpproxy[all]          # All backends available
 
 # Development install
-git clone <repository>
-cd smart-mcp-proxy
+git clone https://github.com/Dumbris/mcpproxy.git
+cd mcpproxy
 pip install -e .[all]
 ```
 
@@ -201,11 +209,21 @@ Extend `SmartMCPProxyServer._discover_server_tools` to support new transport met
 
 ## Contributing
 
-1. Follow KISS and DRY principles
-2. Use Python 3.11+ type annotations (plain types, not `typing.List`)
-3. Add tests for new embedders and server types
-4. Update documentation
+We welcome contributions! Please see our [GitHub repository](https://github.com/Dumbris/mcpproxy) for:
+
+- 🐛 **Bug Reports**: [Submit an issue](https://github.com/Dumbris/mcpproxy/issues)
+- 💡 **Feature Requests**: [Start a discussion](https://github.com/Dumbris/mcpproxy/discussions)
+- 🔧 **Pull Requests**: Fork the repo and submit a PR
+
+### Development Setup
+
+```bash
+git clone https://github.com/Dumbris/mcpproxy.git
+cd mcpproxy
+pip install -e .[dev,all]
+pytest tests/
+```
 
 ## License
 
-[License information]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
