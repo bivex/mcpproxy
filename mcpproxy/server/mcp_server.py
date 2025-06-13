@@ -107,7 +107,8 @@ class SmartMCPProxyServer:
         """Run the Smart MCP Proxy server with full initialization."""
         # Configure logging with debug level if requested
         log_level = os.getenv("MCPPROXY_LOG_LEVEL", "INFO")
-        configure_logging(log_level)
+        log_file = os.getenv("MCPPROXY_LOG_FILE")  # Optional file logging
+        configure_logging(log_level, log_file)
         logger = get_logger()
 
         # Check for config file (already resolved in __init__)

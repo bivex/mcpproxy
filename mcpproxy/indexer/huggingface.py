@@ -1,6 +1,7 @@
 """HuggingFace transformer embedder implementation."""
 
 import asyncio
+import sys
 
 import numpy as np
 
@@ -15,14 +16,13 @@ class HuggingFaceEmbedder(BaseEmbedder):
             from sentence_transformers import SentenceTransformer
         except ImportError:
             print(
-                "\n❌ ERROR: HuggingFace embeddings requires sentence-transformers but it's not installed."
+                "\n❌ ERROR: HuggingFace embeddings requires sentence-transformers but it's not installed.",
+                file=sys.stderr
             )
-            print("   To use HuggingFace embeddings, install with:")
-            print("   pip install mcpproxy[huggingface]")
-            print("   or pip install sentence-transformers")
-            print()
-            import sys
-
+            print("   To use HuggingFace embeddings, install with:", file=sys.stderr)
+            print("   pip install mcpproxy[huggingface]", file=sys.stderr)
+            print("   or pip install sentence-transformers", file=sys.stderr)
+            print(file=sys.stderr)
             sys.exit(1)
 
         self.model_name = model_name

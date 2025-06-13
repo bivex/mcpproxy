@@ -6,7 +6,7 @@ from .persistence.facade import PersistenceFacade
 from .server.config import ConfigLoader
 from .server.mcp_server import SmartMCPProxyServer
 
-__version__ = "0.1.0"
+__version__ = "0.2.1"
 __all__ = [
     "SmartMCPProxyServer",
     "ConfigLoader",

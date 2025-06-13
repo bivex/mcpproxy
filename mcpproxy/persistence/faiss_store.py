@@ -1,5 +1,6 @@
 """Faiss vector store operations."""
 
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -21,16 +22,16 @@ class FaissStore:
             import faiss
         except ImportError:
             print(
-                "\n❌ ERROR: Vector storage requires faiss-cpu but it's not installed."
+                "\n❌ ERROR: Vector storage requires faiss-cpu but it's not installed.",
+                file=sys.stderr
             )
-            print("   To use vector storage, install with:")
+            print("   To use vector storage, install with:", file=sys.stderr)
             print(
-                "   pip install mcpproxy[huggingface] or pip install mcpproxy[openai]"
+                "   pip install mcpproxy[huggingface] or pip install mcpproxy[openai]",
+                file=sys.stderr
             )
-            print("   or pip install faiss-cpu")
-            print()
-            import sys
-
+            print("   or pip install faiss-cpu", file=sys.stderr)
+            print(file=sys.stderr)
             sys.exit(1)
 
         if self.index_path.exists():
@@ -39,16 +40,17 @@ class FaissStore:
                 # Check if dimension matches
                 if self.index.d != self.dimension:
                     print(
-                        f"Warning: Existing index dimension {self.index.d} != expected {self.dimension}"
+                        f"Warning: Existing index dimension {self.index.d} != expected {self.dimension}",
+                        file=sys.stderr
                     )
-                    print("Recreating index with correct dimension...")
+                    print("Recreating index with correct dimension...", file=sys.stderr)
                     self.index_path.unlink()  # Remove old index
                     self.index = faiss.IndexFlatL2(self.dimension)
                     self.next_id = 0
                 else:
                     self.next_id = self.index.ntotal
             except Exception as e:
-                print(f"Error loading existing index: {e}. Creating new index...")
+                print(f"Error loading existing index: {e}. Creating new index...", file=sys.stderr)
                 self.index_path.unlink(missing_ok=True)
                 self.index = faiss.IndexFlatL2(self.dimension)
                 self.next_id = 0
@@ -126,7 +128,7 @@ class FaissStore:
 
             faiss.write_index(self.index, str(self.index_path))
         except Exception as e:
-            print(f"Warning: Could not save index: {e}")
+            print(f"Warning: Could not save index: {e}", file=sys.stderr)
 
     async def get_vector_count(self) -> int:
         """Get the number of vectors in the index."""
@@ -144,7 +146,7 @@ class FaissStore:
             if self.index_path.exists():
                 self.index_path.unlink()
         except Exception as e:
-            print(f"Warning: Could not reset index: {e}")
+            print(f"Warning: Could not reset index: {e}", file=sys.stderr)
 
     async def close(self) -> None:
         """Save and close index."""

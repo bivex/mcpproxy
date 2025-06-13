@@ -1,6 +1,7 @@
 """OpenAI embedder implementation."""
 
 import os
+import sys
 
 import numpy as np
 
@@ -17,14 +18,13 @@ class OpenAIEmbedder(BaseEmbedder):
             import openai
         except ImportError:
             print(
-                "\n❌ ERROR: OpenAI embeddings requires openai but it's not installed."
+                "\n❌ ERROR: OpenAI embeddings requires openai but it's not installed.",
+                file=sys.stderr
             )
-            print("   To use OpenAI embeddings, install with:")
-            print("   pip install mcpproxy[openai]")
-            print("   or pip install openai")
-            print()
-            import sys
-
+            print("   To use OpenAI embeddings, install with:", file=sys.stderr)
+            print("   pip install mcpproxy[openai]", file=sys.stderr)
+            print("   or pip install openai", file=sys.stderr)
+            print(file=sys.stderr)
             sys.exit(1)
 
         self.model = model

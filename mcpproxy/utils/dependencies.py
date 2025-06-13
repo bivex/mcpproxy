@@ -18,12 +18,13 @@ def check_optional_dependency(
         __import__(import_name)
     except ImportError:
         print(
-            f"\n❌ ERROR: {feature_name} requires {package_name} but it's not installed."
+            f"\n❌ ERROR: {feature_name} requires {package_name} but it's not installed.",
+            file=sys.stderr
         )
-        print(f"   To use {feature_name}, install with:")
-        print(f"   pip install mcpproxy[{install_extra}]")
-        print(f"   or pip install {package_name}")
-        print()
+        print(f"   To use {feature_name}, install with:", file=sys.stderr)
+        print(f"   pip install mcpproxy[{install_extra}]", file=sys.stderr)
+        print(f"   or pip install {package_name}", file=sys.stderr)
+        print(file=sys.stderr)
         sys.exit(1)
 
 
@@ -42,22 +43,24 @@ def optional_import(
         class MissingDependency:
             def __getattr__(self, name):
                 print(
-                    f"\n❌ ERROR: {feature_name} requires {package_name} but it's not installed."
+                    f"\n❌ ERROR: {feature_name} requires {package_name} but it's not installed.",
+                    file=sys.stderr
                 )
-                print(f"   To use {feature_name}, install with:")
-                print(f"   pip install mcpproxy[{install_extra}]")
-                print(f"   or pip install {package_name}")
-                print()
+                print(f"   To use {feature_name}, install with:", file=sys.stderr)
+                print(f"   pip install mcpproxy[{install_extra}]", file=sys.stderr)
+                print(f"   or pip install {package_name}", file=sys.stderr)
+                print(file=sys.stderr)
                 sys.exit(1)
 
             def __call__(self, *args, **kwargs):
                 print(
-                    f"\n❌ ERROR: {feature_name} requires {package_name} but it's not installed."
+                    f"\n❌ ERROR: {feature_name} requires {package_name} but it's not installed.",
+                    file=sys.stderr
                 )
-                print(f"   To use {feature_name}, install with:")
-                print(f"   pip install mcpproxy[{install_extra}]")
-                print(f"   or pip install {package_name}")
-                print()
+                print(f"   To use {feature_name}, install with:", file=sys.stderr)
+                print(f"   pip install mcpproxy[{install_extra}]", file=sys.stderr)
+                print(f"   or pip install {package_name}", file=sys.stderr)
+                print(file=sys.stderr)
                 sys.exit(1)
 
         return MissingDependency()
