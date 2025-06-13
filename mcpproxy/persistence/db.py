@@ -22,12 +22,24 @@ class DatabaseManager:
             self._shared_conn.row_factory = sqlite3.Row
             self._create_tables(self._shared_conn)
         else:
+            # Ensure parent directory exists for file-based databases
+            if self.db_path.parent != Path('.'):
+                self.db_path.parent.mkdir(parents=True, exist_ok=True)
             self._init_database()
 
     def _init_database(self) -> None:
         """Initialize database schema."""
-        with sqlite3.connect(self.db_path) as conn:
-            self._create_tables(conn)
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                self._create_tables(conn)
+        except sqlite3.OperationalError as e:
+            if "unable to open database file" in str(e):
+                raise sqlite3.OperationalError(
+                    f"Unable to create database at {self.db_path}. "
+                    f"Please check that the directory exists and is writable. "
+                    f"You can set MCPPROXY_DATA_DIR environment variable to specify a different location."
+                ) from e
+            raise
 
     def _create_tables(self, conn) -> None:
         """Create database tables."""

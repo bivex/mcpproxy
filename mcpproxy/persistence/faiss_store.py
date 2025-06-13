@@ -14,6 +14,9 @@ class FaissStore:
         self.dimension = dimension
         self.index = None
         self.next_id = 0
+        # Ensure parent directory exists
+        if self.index_path.parent != Path('.'):
+            self.index_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_index()
 
     def _init_index(self) -> None:
@@ -124,7 +127,11 @@ class FaissStore:
     async def _save_index(self) -> None:
         """Save the index to disk."""
         try:
-            import faiss
+            import faiss  # type: ignore[import-untyped]
+            
+            # Ensure parent directory exists before saving
+            if self.index_path.parent != Path('.'):
+                self.index_path.parent.mkdir(parents=True, exist_ok=True)
 
             faiss.write_index(self.index, str(self.index_path))
         except Exception as e:
@@ -137,7 +144,7 @@ class FaissStore:
     async def reset(self) -> None:
         """Reset the index (remove all vectors)."""
         try:
-            import faiss
+            import faiss  # type: ignore[import-untyped]
 
             self.index = faiss.IndexFlatL2(self.dimension)
             self.next_id = 0

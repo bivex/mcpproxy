@@ -159,71 +159,100 @@ class SmartMCPProxyServer:
         logger = get_logger()
         logger.info("Initializing Smart MCP Proxy resources...")
 
-        await self._initialize_resources()
+        try:
+            await self._initialize_resources()
+        except Exception as e:
+            logger.error(f"Error during resource initialization: {type(e).__name__}: {e}")
+            logger.error("Full initialization error details:", exc_info=True)
+            raise  # Re-raise the exception
 
         try:
             yield  # Server is running
         finally:
-            await self._cleanup_resources()
+            try:
+                await self._cleanup_resources()
+            except Exception as e:
+                logger.error(f"Error during resource cleanup: {type(e).__name__}: {e}")
+                logger.error("Full cleanup error details:", exc_info=True)
 
     async def _initialize_resources(self) -> None:
         """Core resource initialization logic."""
         logger = get_logger()
 
-        # Check if we should reset data (useful when dimensions change)
-        reset_data = os.getenv("MCPPROXY_RESET_DATA", "false").lower() == "true"
+        try:
+            # Check if we should reset data (useful when dimensions change)
+            reset_data = os.getenv("MCPPROXY_RESET_DATA", "false").lower() == "true"
 
-        # Determine vector dimension based on embedder type
-        if self.config.embedder == EmbedderType.BM25:
-            vector_dimension = 1  # BM25 uses placeholder vectors
-        else:
-            # For vector embedders, we'll set dimension after creating the embedder
-            # Default to 384 for now, will be updated if needed
-            vector_dimension = 384
+            # Determine vector dimension based on embedder type
+            if self.config.embedder == EmbedderType.BM25:
+                vector_dimension = 1  # BM25 uses placeholder vectors
+            else:
+                # For vector embedders, we'll set dimension after creating the embedder
+                # Default to 384 for now, will be updated if needed
+                vector_dimension = 384
 
-        # Initialize persistence with appropriate dimension
-        self.persistence = PersistenceFacade(
-            vector_dimension=vector_dimension, embedder_type=self.config.embedder
-        )
+            # Initialize persistence with appropriate dimension
+            logger.debug(f"Initializing persistence with dimension: {vector_dimension}")
+            self.persistence = PersistenceFacade(
+                vector_dimension=vector_dimension, embedder_type=self.config.embedder
+            )
 
-        # Reset data if requested
-        if reset_data:
-            logger.info("Resetting all data as requested...")
-            await self.persistence.reset_all_data()
+            # Reset data if requested
+            if reset_data:
+                logger.info("Resetting all data as requested...")
+                await self.persistence.reset_all_data()
 
-        # Initialize indexer
-        self.indexer = IndexerFacade(
-            self.persistence, self.config.embedder, self.config.hf_model
-        )
+            # Initialize indexer
+            logger.debug(f"Initializing indexer with embedder: {self.config.embedder}")
+            self.indexer = IndexerFacade(
+                self.persistence, self.config.embedder, self.config.hf_model
+            )
 
-        # Reset embedder data if requested (must be done after indexer creation)
-        if reset_data:
-            logger.info("Resetting embedder data...")
-            await self.indexer.reset_embedder_data()
+            # Reset embedder data if requested (must be done after indexer creation)
+            if reset_data:
+                logger.info("Resetting embedder data...")
+                await self.indexer.reset_embedder_data()
 
-        # For non-BM25 embedders, update persistence with actual dimension
-        if self.config.embedder != EmbedderType.BM25:
-            actual_dimension = self.indexer.embedder.get_dimension()
-            if actual_dimension != vector_dimension:
-                # Recreate persistence with correct dimension
-                logger.info(
-                    f"Updating vector dimension from {vector_dimension} to {actual_dimension}"
-                )
-                await self.persistence.close()
-                self.persistence = PersistenceFacade(
-                    vector_dimension=actual_dimension, embedder_type=self.config.embedder
-                )
-                # Update indexer to use new persistence
-                self.indexer.persistence = self.persistence
+            # For non-BM25 embedders, update persistence with actual dimension
+            if self.config.embedder != EmbedderType.BM25:
+                actual_dimension = self.indexer.embedder.get_dimension()
+                if actual_dimension != vector_dimension:
+                    # Recreate persistence with correct dimension
+                    logger.info(
+                        f"Updating vector dimension from {vector_dimension} to {actual_dimension}"
+                    )
+                    await self.persistence.close()
+                    self.persistence = PersistenceFacade(
+                        vector_dimension=actual_dimension, embedder_type=self.config.embedder
+                    )
+                    # Update indexer to use new persistence
+                    self.indexer.persistence = self.persistence
 
-        # Create upstream clients and proxy servers
-        await self._create_upstream_clients_and_proxies()
-        logger.debug(
-            f"Created {len(self.proxy_servers)} proxy servers and {len(self.upstream_clients)} upstream clients"
-        )
+        except Exception as e:
+            logger.error(f"Error during persistence/indexer initialization: {type(e).__name__}: {e}")
+            logger.error("Full persistence/indexer error details:", exc_info=True)
+            raise
 
-        # Discover and index tools from upstream servers
-        await self.discover_and_index_tools()
+        try:
+            # Create upstream clients and proxy servers
+            logger.debug("Creating upstream clients and proxy servers...")
+            await self._create_upstream_clients_and_proxies()
+            logger.debug(
+                f"Created {len(self.proxy_servers)} proxy servers and {len(self.upstream_clients)} upstream clients"
+            )
+        except Exception as e:
+            logger.error(f"Error during upstream client/proxy creation: {type(e).__name__}: {e}")
+            logger.error("Full upstream client/proxy error details:", exc_info=True)
+            raise
+
+        try:
+            # Discover and index tools from upstream servers
+            logger.debug("Discovering and indexing tools...")
+            await self.discover_and_index_tools()
+        except Exception as e:
+            logger.error(f"Error during tool discovery and indexing: {type(e).__name__}: {e}")
+            logger.error("Full tool discovery error details:", exc_info=True)
+            raise
 
         logger.info("Smart MCP Proxy resources initialized")
 
@@ -766,11 +795,25 @@ class SmartMCPProxyServer:
                     logger.debug(
                         f"Creating URL-based client for {server_name} at {server_config.url}"
                     )
-                    client = Client(server_config.url)
-                    # Create proxy server using FastMCP.from_client
-                    proxy_server = FastMCP.from_client(
-                        client, name=f"{server_name}_proxy"
-                    )
+                    try:
+                        client = Client(server_config.url)
+                        logger.debug(f"URL client created for {server_name}")
+                    except Exception as client_error:
+                        logger.error(f"Failed to create URL client for {server_name}: {type(client_error).__name__}: {client_error}")
+                        logger.error(f"URL client error details for {server_name}:", exc_info=True)
+                        continue
+                    
+                    # Create proxy server using FastMCP.as_proxy
+                    try:
+                        proxy_server = FastMCP.as_proxy(
+                            client, name=f"{server_name}_proxy"
+                        )
+                        logger.debug(f"URL proxy server created for {server_name}")
+                    except Exception as proxy_error:
+                        logger.error(f"Failed to create URL proxy server for {server_name}: {type(proxy_error).__name__}: {proxy_error}")
+                        logger.error(f"URL proxy error details for {server_name}:", exc_info=True)
+                        continue
+                        
                 elif server_config.command:
                     # Create client for command-based server
                     config_dict = {
@@ -785,11 +828,24 @@ class SmartMCPProxyServer:
                     logger.debug(
                         f"Creating command-based client for {server_name}: {config_dict}"
                     )
-                    client = Client(config_dict)
-                    # Create proxy server using FastMCP.from_client
-                    proxy_server = FastMCP.from_client(
-                        client, name=f"{server_name}_proxy"
-                    )
+                    try:
+                        client = Client(config_dict)
+                        logger.debug(f"Command client created for {server_name}")
+                    except Exception as client_error:
+                        logger.error(f"Failed to create command client for {server_name}: {type(client_error).__name__}: {client_error}")
+                        logger.error(f"Command client error details for {server_name}:", exc_info=True)
+                        continue
+                    
+                    # Create proxy server using FastMCP.as_proxy
+                    try:
+                        proxy_server = FastMCP.as_proxy(
+                            client, name=f"{server_name}_proxy"
+                        )
+                        logger.debug(f"Command proxy server created for {server_name}")
+                    except Exception as proxy_error:
+                        logger.error(f"Failed to create command proxy server for {server_name}: {type(proxy_error).__name__}: {proxy_error}")
+                        logger.error(f"Command proxy error details for {server_name}:", exc_info=True)
+                        continue
                 else:
                     logger.warning(
                         f"Skipping {server_name}: no URL or command specified"
@@ -822,11 +878,17 @@ class SmartMCPProxyServer:
         logger = get_logger()
         logger.info(f"Starting tool discovery for {len(self.proxy_servers)} servers...")
 
-        # First, get all current servers from configuration
-        current_servers = set(self.proxy_servers.keys())
+        try:
+            # First, get all current servers from configuration
+            current_servers = set(self.proxy_servers.keys())
 
-        # Clean up tools from servers that no longer exist in config
-        await self._cleanup_stale_servers(current_servers)
+            # Clean up tools from servers that no longer exist in config
+            logger.debug("Cleaning up stale servers...")
+            await self._cleanup_stale_servers(current_servers)
+        except Exception as e:
+            logger.error(f"Error during stale server cleanup: {type(e).__name__}: {e}")
+            logger.error("Full stale server cleanup error details:", exc_info=True)
+            raise
 
         # Discover and index tools from current servers
         current_tools = {}  # server_name -> set of tool names
@@ -843,8 +905,14 @@ class SmartMCPProxyServer:
                 logger.error(f"Exception details for {server_name}:", exc_info=True)
                 current_tools[server_name] = set()  # Mark as having no tools
 
-        # Clean up tools that no longer exist on their servers
-        await self._cleanup_stale_tools(current_tools)
+        try:
+            # Clean up tools that no longer exist on their servers
+            logger.debug("Cleaning up stale tools...")
+            await self._cleanup_stale_tools(current_tools)
+        except Exception as e:
+            logger.error(f"Error during stale tool cleanup: {type(e).__name__}: {e}")
+            logger.error("Full stale tool cleanup error details:", exc_info=True)
+            raise
 
     async def _cleanup_stale_servers(self, current_servers: set[str]) -> None:
         """Remove tools from servers that no longer exist in configuration."""

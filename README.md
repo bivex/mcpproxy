@@ -166,6 +166,7 @@ mcpproxy/
 | `MCPPROXY_TOP_K`       | Integer                       | `5`     | Number of tools to register |
 | `MCPPROXY_TOOL_NAME_LIMIT` | Integer                   | `60`    | Maximum tool name length |
 | `MCPPROXY_LIST_CHANGED_EXEC` | Shell command             | -       | External command to execute after tool changes (see [Client Compatibility](#client-compatibility)) |
+| `MCPPROXY_DATA_DIR`    | Directory path                | `~/.mcpproxy` | Directory for database and index files |
 | `OPENAI_API_KEY` | Your OpenAI API key           | -       | Required for OpenAI embedder |
 | `MCPPROXY_CONFIG_PATH`| Path to config file           | `mcp_config.json` | Config file location |
 | `MCPPROXY_HOST`     | Host to bind                  | `localhost` | Server host |
