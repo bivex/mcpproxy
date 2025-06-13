@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Main entry point for Smart MCP Proxy."""
 
-from smart_mcp_proxy import SmartMCPProxyServer
+from mcpproxy import SmartMCPProxyServer
 
 
 def main():

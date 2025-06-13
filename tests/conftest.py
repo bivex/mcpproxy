@@ -1,23 +1,23 @@
 """Pytest configuration and common fixtures for Smart MCP Proxy tests."""
 
-import tempfile
-import pytest
 import asyncio
-import sqlite3
+import tempfile
 from pathlib import Path
 from typing import AsyncGenerator
-import numpy as np
 
-from smart_mcp_proxy.models.schemas import (
-    ToolMetadata, 
-    SearchResult, 
-    ProxyConfig, 
-    ServerConfig, 
-    EmbedderType
+import numpy as np
+import pytest
+
+from mcpproxy.indexer.facade import IndexerFacade
+from mcpproxy.models.schemas import (
+    EmbedderType,
+    ProxyConfig,
+    SearchResult,
+    ServerConfig,
+    ToolMetadata,
 )
-from smart_mcp_proxy.persistence.facade import PersistenceFacade
-from smart_mcp_proxy.persistence.db import DatabaseManager
-from smart_mcp_proxy.indexer.facade import IndexerFacade
+from mcpproxy.persistence.db import DatabaseManager
+from mcpproxy.persistence.facade import PersistenceFacade
 
 
 @pytest.fixture(scope="session")
@@ -38,7 +38,7 @@ def sample_tool_metadata() -> ToolMetadata:
         hash="abc123def456",
         server_name="company-api",
         faiss_vector_id=0,
-        params_json='{"type": "object", "properties": {"name": {"type": "string"}, "flavor": {"type": "string"}}}'
+        params_json='{"type": "object", "properties": {"name": {"type": "string"}, "flavor": {"type": "string"}}}',
     )
 
 
@@ -53,7 +53,7 @@ def sample_tool_metadata_list() -> list[ToolMetadata]:
             hash="hash1",
             server_name="company-api",
             faiss_vector_id=0,
-            params_json='{"type": "object", "properties": {"name": {"type": "string"}}}'
+            params_json='{"type": "object", "properties": {"name": {"type": "string"}}}',
         ),
         ToolMetadata(
             id=2,
@@ -62,7 +62,7 @@ def sample_tool_metadata_list() -> list[ToolMetadata]:
             hash="hash2",
             server_name="company-api",
             faiss_vector_id=1,
-            params_json='{"type": "object", "properties": {"instance_id": {"type": "string"}}}'
+            params_json='{"type": "object", "properties": {"instance_id": {"type": "string"}}}',
         ),
         ToolMetadata(
             id=3,
@@ -71,7 +71,7 @@ def sample_tool_metadata_list() -> list[ToolMetadata]:
             hash="hash3",
             server_name="storage-api",
             faiss_vector_id=2,
-            params_json='{"type": "object", "properties": {"region": {"type": "string"}}}'
+            params_json='{"type": "object", "properties": {"region": {"type": "string"}}}',
         ),
         ToolMetadata(
             id=4,
@@ -80,8 +80,8 @@ def sample_tool_metadata_list() -> list[ToolMetadata]:
             hash="hash4",
             server_name="storage-api",
             faiss_vector_id=3,
-            params_json='{"type": "object", "properties": {"size": {"type": "integer"}}}'
-        )
+            params_json='{"type": "object", "properties": {"size": {"type": "integer"}}}',
+        ),
     ]
 
 
@@ -99,14 +99,12 @@ def sample_proxy_config() -> ProxyConfig:
             "company-api": ServerConfig(url="http://localhost:8080/mcp"),
             "storage-api": ServerConfig(url="http://localhost:8081/mcp"),
             "local-tools": ServerConfig(
-                command="python",
-                args=["server.py"],
-                env={"API_KEY": "test-key"}
-            )
+                command="python", args=["server.py"], env={"API_KEY": "test-key"}
+            ),
         },
         embedder=EmbedderType.BM25,
         hf_model="sentence-transformers/all-MiniLM-L6-v2",
-        top_k=5
+        top_k=5,
     )
 
 
@@ -114,8 +112,8 @@ def sample_proxy_config() -> ProxyConfig:
 async def temp_db_path():
     """Temporary database path for testing."""
     # Generate a temporary file path but don't create the file
-    import tempfile
     import os
+
     temp_dir = tempfile.gettempdir()
     db_path = os.path.join(temp_dir, f"test_db_{os.getpid()}_{id(object())}.db")
     yield db_path
@@ -127,12 +125,14 @@ async def temp_db_path():
 async def temp_faiss_path():
     """Temporary Faiss index path for testing."""
     # Generate a temporary file path but don't create the file
-    import tempfile
     import os
+
     temp_dir = tempfile.gettempdir()
-    faiss_path = os.path.join(temp_dir, f"test_faiss_{os.getpid()}_{id(object())}.faiss")
+    faiss_path = os.path.join(
+        temp_dir, f"test_faiss_{os.getpid()}_{id(object())}.faiss"
+    )
     yield faiss_path
-    # Cleanup  
+    # Cleanup
     Path(faiss_path).unlink(missing_ok=True)
 
 
@@ -146,12 +146,12 @@ async def in_memory_db() -> AsyncGenerator[DatabaseManager, None]:
 
 
 @pytest.fixture
-async def temp_persistence_facade(temp_db_path, temp_faiss_path) -> AsyncGenerator[PersistenceFacade, None]:
+async def temp_persistence_facade(
+    temp_db_path, temp_faiss_path
+) -> AsyncGenerator[PersistenceFacade, None]:
     """Temporary persistence facade with isolated storage."""
     facade = PersistenceFacade(
-        db_path=temp_db_path,
-        index_path=temp_faiss_path,
-        vector_dimension=384
+        db_path=temp_db_path, index_path=temp_faiss_path, vector_dimension=384
     )
     yield facade
     await facade.close()
@@ -161,27 +161,28 @@ async def temp_persistence_facade(temp_db_path, temp_faiss_path) -> AsyncGenerat
 
 
 @pytest.fixture
-async def temp_indexer_facade(temp_db_path, temp_faiss_path) -> AsyncGenerator[IndexerFacade, None]:
+async def temp_indexer_facade(
+    temp_db_path, temp_faiss_path
+) -> AsyncGenerator[IndexerFacade, None]:
     """Temporary indexer facade for testing."""
-    import tempfile
-    
+
     # Create temporary directory for BM25 index
     with tempfile.TemporaryDirectory() as temp_bm25_dir:
         # Create persistence facade - BM25 doesn't need vector dimension since it doesn't use faiss
         persistence_facade = PersistenceFacade(
             db_path=temp_db_path,
             index_path=temp_faiss_path,
-            vector_dimension=1  # Placeholder dimension for BM25
+            vector_dimension=1,  # Placeholder dimension for BM25
         )
-        
+
         indexer = IndexerFacade(
             persistence=persistence_facade,
             embedder_type=EmbedderType.BM25,
-            index_dir=temp_bm25_dir
+            index_dir=temp_bm25_dir,
         )
-        
+
         yield indexer
-        
+
         await persistence_facade.close()
         # Cleanup files
         Path(temp_db_path).unlink(missing_ok=True)
@@ -196,7 +197,7 @@ def sample_embeddings() -> list[np.ndarray]:
         np.random.random(384).astype(np.float32),
         np.random.random(384).astype(np.float32),
         np.random.random(384).astype(np.float32),
-        np.random.random(384).astype(np.float32)
+        np.random.random(384).astype(np.float32),
     ]
 
 
@@ -206,21 +207,15 @@ def sample_tool_params() -> dict:
     return {
         "type": "object",
         "properties": {
-            "name": {
-                "type": "string",
-                "description": "Instance name"
-            },
-            "flavor": {
-                "type": "string", 
-                "description": "Instance flavor/size"
-            },
+            "name": {"type": "string", "description": "Instance name"},
+            "flavor": {"type": "string", "description": "Instance flavor/size"},
             "region": {
                 "type": "string",
                 "description": "Deployment region",
-                "default": "us-east-1"
-            }
+                "default": "us-east-1",
+            },
         },
-        "required": ["name", "flavor"]
+        "required": ["name", "flavor"],
     }
 
 
@@ -237,5 +232,5 @@ def sample_tool_annotations() -> dict:
         "category": "compute",
         "cost": "medium",
         "permissions": ["instance:create"],
-        "rate_limit": "10/minute"
-    } 
+        "rate_limit": "10/minute",
+    }

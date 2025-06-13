@@ -1,8 +1,7 @@
 """OpenAI embedder implementation."""
 
-import asyncio
 import os
-from typing import Any
+
 import numpy as np
 
 from .base import BaseEmbedder
@@ -10,46 +9,43 @@ from .base import BaseEmbedder
 
 class OpenAIEmbedder(BaseEmbedder):
     """OpenAI embedder using text-embedding-ada-002."""
-    
-    def __init__(self, model: str = "text-embedding-ada-002", api_key: str | None = None):
+
+    def __init__(
+        self, model: str = "text-embedding-ada-002", api_key: str | None = None
+    ):
         try:
             import openai
         except ImportError:
-            print(f"\n❌ ERROR: OpenAI embeddings requires openai but it's not installed.")
-            print(f"   To use OpenAI embeddings, install with:")
-            print(f"   pip install mcpproxy[openai]")
-            print(f"   or pip install openai")
+            print(
+                "\n❌ ERROR: OpenAI embeddings requires openai but it's not installed."
+            )
+            print("   To use OpenAI embeddings, install with:")
+            print("   pip install mcpproxy[openai]")
+            print("   or pip install openai")
             print()
             import sys
+
             sys.exit(1)
-        
+
         self.model = model
-        self.client = openai.AsyncOpenAI(
-            api_key=api_key or os.getenv("OPENAI_API_KEY")
-        )
+        self.client = openai.AsyncOpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
         # text-embedding-ada-002 has 1536 dimensions
         self.dimension = 1536 if model == "text-embedding-ada-002" else 1536
-    
+
     async def embed_text(self, text: str) -> np.ndarray:
         """Embed single text using OpenAI API."""
-        response = await self.client.embeddings.create(
-            model=self.model,
-            input=text
-        )
+        response = await self.client.embeddings.create(model=self.model, input=text)
         embedding = response.data[0].embedding
         return np.array(embedding, dtype=np.float32)
-    
+
     async def embed_batch(self, texts: list[str]) -> list[np.ndarray]:
         """Embed batch of texts."""
-        response = await self.client.embeddings.create(
-            model=self.model,
-            input=texts
-        )
+        response = await self.client.embeddings.create(model=self.model, input=texts)
         embeddings = []
         for item in response.data:
             embeddings.append(np.array(item.embedding, dtype=np.float32))
         return embeddings
-    
+
     def get_dimension(self) -> int:
         """Get embedding dimension."""
-        return self.dimension 
+        return self.dimension

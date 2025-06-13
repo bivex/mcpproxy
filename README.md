@@ -134,7 +134,7 @@ instance = await client.call_tool("company-prod_create_instance", {
 ### Programmatic Usage
 
 ```python
-from smart_mcp_proxy import SmartMCPProxyServer
+from mcpproxy import SmartMCPProxyServer
 
 proxy = SmartMCPProxyServer("config.json")
 await proxy.start()
@@ -148,7 +148,7 @@ for result in results:
 ## Project Structure
 
 ```
-smart_mcp_proxy/
+mcpproxy/
 ├── models/
 │   └── schemas.py           # Pydantic models and schemas
 ├── persistence/

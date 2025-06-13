@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mcpproxy = "smart_mcp_proxy.__main__:main"
+mcpproxy = "mcpproxy.__main__:main"
 
 [project.optional-dependencies]
 bm25 = [
@@ -43,6 +43,8 @@ test = [
 ]
 dev = [
     "build>=1.2.2.post1",
+    "ruff>=0.8.0",
+    "mypy>=1.9.0",
 ]
 
 [build-system]
@@ -61,4 +63,4 @@ addopts = "-v --tb=short"
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["smart_mcp_proxy"]
+packages = ["mcpproxy"]

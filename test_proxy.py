@@ -5,8 +5,8 @@ import asyncio
 import json
 from pathlib import Path
 
-from smart_mcp_proxy.server.mcp_server import SmartMCPProxyServer
-from smart_mcp_proxy.logging import configure_logging, get_logger
+from mcpproxy.server.mcp_server import SmartMCPProxyServer
+from mcpproxy.logging import configure_logging, get_logger
 
 
 async def test_proxy_initialization():

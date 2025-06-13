@@ -1,1 +1,1 @@
-"""Smart MCP Proxy Tests Package.""" 
+"""Smart MCP Proxy Tests Package."""
