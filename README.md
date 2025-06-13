@@ -45,6 +45,13 @@ Then create a separate `~/.cursor/mcp_proxy.json` with your actual(!) MCP server
 
 **Important**: The `mcp_proxy.json` must be a different file than `mcp.json` to avoid circular proxy connections. The proxy configuration file has the same format as Cursor's MCP configuration but contains the actual MCP servers you want to federate.
 
+## Tip for better LLM results (copy-paste into your system/dev prompt):
+
+```
+When you see a tool named `retrieval_tools` in the MCP tool list, call it first.  
+It returns the most relevant tools for the user’s request, helping you answer more accurately and concisely.
+```
+
 ---
 
 A federating gateway that sits between AI agents and multiple Model Context Protocol (MCP) servers, providing intelligent tool discovery and dynamic registration.
