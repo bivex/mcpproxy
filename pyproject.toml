@@ -1,7 +1,7 @@
 [project]
-name = "mcpproxy"
-version = "0.1.0"
-description = "MCP Proxy - A federating gateway for MCP servers with intelligent tool discovery"
+name = "smart-mcp-proxy"
+version = "0.1.1"
+description = "Smart MCP Proxy - A federating gateway for MCP servers with intelligent tool discovery"
 readme = "README.md"
 requires-python = ">=3.11.1"
 license = {text = "MIT"}
@@ -21,6 +21,7 @@ keywords = [
     "fastmcp",
     "embedding",
     "search",
+    "smart",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -40,31 +41,32 @@ dependencies = [
     "httpx>=0.28.1",
     "pydantic>=2.11.5",
     "numpy>=2.2.6",
-    "bm25s[full]>=0.2.13",
+    "bm25s>=0.2.13",
 ]
 
 [project.scripts]
 mcpproxy = "mcpproxy.__main__:main"
+smart-mcp-proxy = "mcpproxy.__main__:main"
 
 [project.optional-dependencies]
 bm25 = [
-    "bm25s[full]>=0.2.13",
+    "bm25s>=0.2.13",
 ]
 huggingface = [
     "sentence-transformers>=4.1.0",
     "faiss-cpu>=1.11.0",
-    "bm25s[full]>=0.2.13",
+    "bm25s>=0.2.13",
 ]
 openai = [
     "openai>=1.86.0",
     "faiss-cpu>=1.11.0",
-    "bm25s[full]>=0.2.13",
+    "bm25s>=0.2.13",
 ]
 all = [
     "sentence-transformers>=4.1.0",
     "openai>=1.86.0",
     "faiss-cpu>=1.11.0",
-    "bm25s[full]>=0.2.13",
+    "bm25s>=0.2.13",
 ]
 test = [
     "pytest>=8.4.0",
@@ -96,6 +98,11 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+markers = [
+    "faiss: marks tests as requiring faiss (deselect with '-m \"not faiss\"')",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests"
+]
 
 [tool.hatch.metadata]
 allow-direct-references = true

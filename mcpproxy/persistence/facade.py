@@ -2,9 +2,9 @@
 
 import numpy as np
 
-from ..models.schemas import SearchResult, ToolMetadata
+from ..models.schemas import EmbedderType, SearchResult, ToolMetadata
 from .db import DatabaseManager
-from .faiss_store import FaissStore
+from .bm25_store import BM25Store
 
 
 class PersistenceFacade:
@@ -15,9 +15,17 @@ class PersistenceFacade:
         db_path: str = "proxy.db",
         index_path: str = "tools.faiss",
         vector_dimension: int = 384,
+        embedder_type: EmbedderType = EmbedderType.BM25,
     ):
         self.db = DatabaseManager(db_path)
-        self.vector_store = FaissStore(index_path, vector_dimension)
+        
+        # Use appropriate vector store based on embedder type
+        if embedder_type == EmbedderType.BM25:
+            self.vector_store = BM25Store(index_path, vector_dimension)
+        else:
+            # Only import faiss when needed for vector embedders
+            from .faiss_store import FaissStore
+            self.vector_store = FaissStore(index_path, vector_dimension)
 
     async def store_tool_with_vector(
         self, tool: ToolMetadata, vector: np.ndarray

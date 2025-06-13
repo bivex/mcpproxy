@@ -176,7 +176,9 @@ class SmartMCPProxyServer:
             vector_dimension = 384
 
         # Initialize persistence with appropriate dimension
-        self.persistence = PersistenceFacade(vector_dimension=vector_dimension)
+        self.persistence = PersistenceFacade(
+            vector_dimension=vector_dimension, embedder_type=self.config.embedder
+        )
 
         # Reset data if requested
         if reset_data:
@@ -202,7 +204,9 @@ class SmartMCPProxyServer:
                     f"Updating vector dimension from {vector_dimension} to {actual_dimension}"
                 )
                 await self.persistence.close()
-                self.persistence = PersistenceFacade(vector_dimension=actual_dimension)
+                self.persistence = PersistenceFacade(
+                    vector_dimension=actual_dimension, embedder_type=self.config.embedder
+                )
                 # Update indexer to use new persistence
                 self.indexer.persistence = self.persistence
 

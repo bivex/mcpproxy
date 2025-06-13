@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+from enum import Enum
 from unittest.mock import AsyncMock, patch
 
 import numpy as np
@@ -378,9 +379,13 @@ class TestIndexerFacade:
         )
         assert isinstance(indexer_bm25.embedder, BM25Embedder)
 
-        # Test unknown embedder type
+        # Test with mock unknown embedder type
+        class UnknownEmbedderType(str, Enum):
+            UNKNOWN = "UNKNOWN"
+        
         with pytest.raises(ValueError, match="Unknown embedder type"):
-            IndexerFacade(mock_persistence, "UNKNOWN")
+            # This will fail at the dependencies check or the embedder creation
+            IndexerFacade(mock_persistence, UnknownEmbedderType.UNKNOWN)
 
     @pytest.mark.asyncio
     async def test_index_tool_basic(self, mock_persistence, temp_index_dir):

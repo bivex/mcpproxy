@@ -151,7 +151,10 @@ async def temp_persistence_facade(
 ) -> AsyncGenerator[PersistenceFacade, None]:
     """Temporary persistence facade with isolated storage."""
     facade = PersistenceFacade(
-        db_path=temp_db_path, index_path=temp_faiss_path, vector_dimension=384
+        db_path=temp_db_path, 
+        index_path=temp_faiss_path, 
+        vector_dimension=384,
+        embedder_type=EmbedderType.BM25,
     )
     yield facade
     await facade.close()
@@ -173,6 +176,7 @@ async def temp_indexer_facade(
             db_path=temp_db_path,
             index_path=temp_faiss_path,
             vector_dimension=1,  # Placeholder dimension for BM25
+            embedder_type=EmbedderType.BM25,
         )
 
         indexer = IndexerFacade(

@@ -378,9 +378,14 @@ class TestFullIndexingFlow:
         assert "configuration" in stored_tool.params_json
         assert "version" in stored_tool.params_json
 
-        # Verify vector was stored
+        # Verify vector was stored (BM25 uses its own indexing, not vector storage)
         vector_count = await temp_indexer_facade.persistence.get_vector_count()
-        assert vector_count == 1
+        # For BM25 embedder, vector count is always 0 since it doesn't use vector storage
+        from mcpproxy.indexer.bm25 import BM25Embedder
+        if isinstance(temp_indexer_facade.embedder, BM25Embedder):
+            assert vector_count == 0  # BM25 doesn't use vector storage
+        else:
+            assert vector_count == 1  # Other embedders use vector storage
 
         # Search should find the tool using complex metadata
         results = await temp_indexer_facade.search_tools("complex configuration", k=5)

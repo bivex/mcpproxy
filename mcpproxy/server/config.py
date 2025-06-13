@@ -28,7 +28,7 @@ class ConfigLoader:
             mcp_servers[name] = ServerConfig(**server_data)
 
         # Get embedder configuration from environment
-        embedder_type = EmbedderType(os.getenv("SP_EMBEDDER", "HF"))
+        embedder_type = EmbedderType(os.getenv("SP_EMBEDDER", "BM25"))
         hf_model = os.getenv("SP_HF_MODEL")
         top_k = int(os.getenv("SP_TOP_K", "5"))
 

@@ -1,13 +1,13 @@
 # Smart MCP Proxy
 
-[![PyPI version](https://badge.fury.io/py/mcpproxy.svg)](https://badge.fury.io/py/mcpproxy)
+[![PyPI version](https://badge.fury.io/py/smart-mcp-proxy.svg)](https://badge.fury.io/py/smart-mcp-proxy)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 A federating gateway that sits between AI agents and multiple Model Context Protocol (MCP) servers, providing intelligent tool discovery and dynamic registration.
 
 🌐 **Website**: [mcpproxy.app](https://mcpproxy.app)
-📦 **PyPI**: [pypi.org/project/mcpproxy](https://pypi.org/project/mcpproxy/)
+📦 **PyPI**: [pypi.org/project/smart-mcp-proxy](https://pypi.org/project/smart-mcp-proxy/)
 🔗 **GitHub**: [github.com/Dumbris/mcpproxy](https://github.com/Dumbris/mcpproxy)
 
 ## Features
@@ -42,13 +42,13 @@ Choose your installation based on the embedding backend you want to use:
 
 ```bash
 # Basic installation with BM25 (lexical search, no ML dependencies)
-pip install mcpproxy
+pip install smart-mcp-proxy
 
 # Or with specific backends:
-pip install mcpproxy[bm25]         # Explicit BM25 (same as basic)
-pip install mcpproxy[huggingface]  # HuggingFace + vector search
-pip install mcpproxy[openai]       # OpenAI embeddings + vector search
-pip install mcpproxy[all]          # All backends available
+pip install smart-mcp-proxy[bm25]         # Explicit BM25 (same as basic)
+pip install smart-mcp-proxy[huggingface]  # HuggingFace + vector search
+pip install smart-mcp-proxy[openai]       # OpenAI embeddings + vector search
+pip install smart-mcp-proxy[all]          # All backends available
 
 # Development install
 git clone https://github.com/Dumbris/mcpproxy.git
@@ -111,7 +111,7 @@ This creates `mcp_config.json`:
 
 ```bash
 # Using the installed script
-mcpproxy
+smart-mcp-proxy
 
 # Or directly with Python
 python main.py

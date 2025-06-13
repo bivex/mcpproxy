@@ -183,6 +183,11 @@ class TestDatabaseManager:
 class TestFaissStore:
     """Test cases for FaissStore."""
 
+    @pytest.fixture(autouse=True)
+    def require_faiss(self):
+        """Skip all tests in this class if faiss is not available."""
+        pytest.importorskip("faiss", reason="faiss-cpu not installed")
+
     @pytest.fixture
     def mock_faiss(self):
         """Mock faiss module to avoid dependency issues."""
@@ -459,9 +464,13 @@ class TestPersistenceFacade:
             vector = np.random.random(384).astype(np.float32)
             await temp_persistence_facade.store_tool_with_vector(tool, vector)
 
-        # Check count
+        # Check count - BM25 doesn't use vector storage, so count is always 0
         count = await temp_persistence_facade.get_vector_count()
-        assert count == 2
+        from mcpproxy.persistence.bm25_store import BM25Store
+        if isinstance(temp_persistence_facade.vector_store, BM25Store):
+            assert count == 0  # BM25 doesn't use vector storage
+        else:
+            assert count == 2  # Other embedders use vector storage
 
     @pytest.mark.asyncio
     async def test_close_facade(self, temp_persistence_facade):
