@@ -7,6 +7,7 @@
 ## Cursor IDE Integration
 
 To use mcpproxy in Cursor IDE, add this configuration to your `~/.cursor/mcp.json`:
+So far Cursor IDE does not listen notifications (part of MCP standard) and don't refresh tools list, workaround is to use MCPPROXY_LIST_CHANGED_EXEC to touch mcp.json file. When Cursor will implement notifications, this workaround can be removed.
 
 ```json
 {
@@ -22,12 +23,12 @@ To use mcpproxy in Cursor IDE, add this configuration to your `~/.cursor/mcp.jso
 }
 ```
 
-Then create a separate `~/.cursor/mcp_proxy.json` with your actual MCP servers:
-
+Then create a separate `~/.cursor/mcp_proxy.json` with your actual(!) MCP servers:
+(just an example of configuration, you can use any MCP servers you want)
 ```json
 {
   "mcpServers": {
-    "company-mcp-server-prod": {
+    "company-mcp": {
       "command": "uvx",
       "args": ["--from", "mcp-company-python@git+https://github.com/company/mcp-company.git", "company-mcp-server"],
       "env": {
@@ -36,7 +37,7 @@ Then create a separate `~/.cursor/mcp_proxy.json` with your actual MCP servers:
       }
     },
     "company-docs": {
-      "url": "http://localhost:8000/sse"
+      "url": "http://localhost:8000/mcp/"
     }
   }
 }
@@ -104,7 +105,7 @@ The proxy will automatically check for required dependencies and provide helpful
 
 ```bash
 # Using the installed script
-mcpproxy
+MCPPROXY_CONFIG_PATH=mcp_config.json mcpproxy
 ```
 
 The proxy will:
@@ -211,25 +212,6 @@ This causes Cursor to detect the config file change and refresh its tool list.
 - Security policies prohibit executing external commands
 
 This feature is disabled by default and only executes when explicitly configured.
-
-## Development
-
-### Adding New Embedders
-
-1. Inherit from `BaseEmbedder`
-2. Implement `embed_text`, `embed_batch`, `get_dimension`
-3. Add to `IndexerFacade._create_embedder`
-
-```python
-class CustomEmbedder(BaseEmbedder):
-    async def embed_text(self, text: str) -> np.ndarray:
-        # Your implementation
-        pass
-```
-
-### Adding New Server Types
-
-Extend `SmartMCPProxyServer._discover_server_tools` to support new transport methods (WebSocket, etc.).
 
 ## Contributing
 
