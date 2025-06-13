@@ -80,6 +80,7 @@ A3[company-mcp-server-with-oauth]
 | `SP_EMBEDDER`    | `BM25`, `HF`, `OPENAI`                        | `BM25`  |
 | `SP_HF_MODEL`    | e.g. `sentence-transformers/all-MiniLM-L6-v2` | —       |
 | `SP_TOOLS_LIMIT` | Integer (1-100)                               | `15`    |
+| `SP_TOOL_NAME_LIMIT` | Integer (10-200)                          | `60`    |
 | `OPENAI_API_KEY` | your key                                      | —       |
 
 The proxy chooses the search driver at startup; mixed‑mode hybrid search (lexical + vector) is possible in future.

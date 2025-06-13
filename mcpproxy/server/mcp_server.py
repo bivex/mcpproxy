@@ -1,7 +1,9 @@
 """FastMCP server implementation for Smart MCP Proxy."""
 
+import asyncio
 import json
 import os
+import subprocess
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -59,6 +61,9 @@ class SmartMCPProxyServer:
         # Output truncation configuration
         truncate_len = os.getenv("SP_TRUNCATE_OUTPUT_LEN")
         self.truncate_output_len = int(truncate_len) if truncate_len else None
+
+        # External command execution after tools list changes
+        self.list_changed_exec_cmd = os.getenv("SP_LIST_CHANGED_EXEC")
 
         # Will be initialized in lifespan
         self.persistence: PersistenceFacade | None = None
@@ -356,6 +361,10 @@ class SmartMCPProxyServer:
                             f"Sent tools/list_changed notification {self.mcp._mcp_server.request_context.request_id}"
                         )
 
+                        # Execute external command to trigger client refresh (workaround for clients 
+                        # that don't properly handle tools/list_changed notifications)
+                        await self._execute_list_changed_command()
+
                 except Exception as notify_err:
                     logger.warning(
                         f"Failed to emit tools/list_changed notification: {notify_err}"
@@ -382,7 +391,7 @@ class SmartMCPProxyServer:
         Google Gemini API Requirements (more strict than general MCP):
         - Must start with letter or underscore
         - Only lowercase letters (a-z), numbers (0-9), underscores (_)
-        - Maximum 63 characters (safety margin)
+        - Maximum length configurable via SP_TOOL_NAME_LIMIT (default 60)
         - No dots or dashes (unlike general MCP spec)
 
         Args:
@@ -420,8 +429,9 @@ class SmartMCPProxyServer:
         if not re.match(r"^[a-z_]", combined):
             combined = f"tool_{combined}"
 
-        # Truncate to 63 chars if needed
-        if len(combined) > 63:
+        # Truncate to configured limit if needed
+        max_length = self.config.tool_name_limit
+        if len(combined) > max_length:
             # Try to keep server prefix if possible
             if "_" in combined:
                 parts = combined.split("_", 1)
@@ -429,14 +439,14 @@ class SmartMCPProxyServer:
                 tool_part = parts[1]
 
                 # Reserve space for server part + underscore
-                available_space = 63 - len(server_part) - 1
+                available_space = max_length - len(server_part) - 1
                 if available_space > 3:  # Keep at least 3 chars of tool name
                     truncated = f"{server_part}_{tool_part[:available_space]}"
                 else:
                     # Not enough space for meaningful server prefix
-                    truncated = combined[:63]
+                    truncated = combined[:max_length]
             else:
-                truncated = combined[:63]
+                truncated = combined[:max_length]
 
             # Ensure doesn't end with underscore
             truncated = truncated.rstrip("_")
@@ -451,8 +461,8 @@ class SmartMCPProxyServer:
         if not re.match(r"^[a-z_]", combined):
             combined = f"tool_{combined}"
             # Re-truncate if needed
-            if len(combined) > 63:
-                combined = combined[:63].rstrip("_")
+            if len(combined) > max_length:
+                combined = combined[:max_length].rstrip("_")
 
         # Final fallback if somehow we ended up empty
         if not combined:
@@ -461,7 +471,7 @@ class SmartMCPProxyServer:
         # Debug logging for validation
         logger = get_logger()
         if (
-            len(combined) > 63
+            len(combined) > max_length
             or not re.match(r"^[a-z_][a-z0-9_]*$", combined)
             or combined.endswith("_")
         ):
@@ -504,6 +514,45 @@ class SmartMCPProxyServer:
         )
 
         return truncated
+
+    async def _execute_list_changed_command(self) -> None:
+        """Execute external command after tools list changes to trigger client refresh.
+        
+        This is a workaround for MCP clients that don't properly handle tools/list_changed notifications.
+        """
+        if not self.list_changed_exec_cmd:
+            return
+            
+        logger = get_logger()
+        try:
+            # Execute command in background without blocking
+            logger.debug(f"Executing list changed command: {self.list_changed_exec_cmd}")
+            
+            # Run command asynchronously
+            process = await asyncio.create_subprocess_shell(
+                self.list_changed_exec_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            # Wait for completion with timeout
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), 
+                timeout=5.0  # 5 second timeout
+            )
+            
+            if process.returncode == 0:
+                logger.debug("List changed command executed successfully")
+            else:
+                logger.warning(
+                    f"List changed command failed with code {process.returncode}: "
+                    f"stderr={stderr.decode().strip()}"
+                )
+                
+        except asyncio.TimeoutError:
+            logger.warning("List changed command timed out after 5 seconds")
+        except Exception as e:
+            logger.warning(f"Error executing list changed command: {e}")
 
     def _calculate_tool_weight(self, score: float, added_timestamp: float) -> float:
         """Calculate weighted score for tool eviction based on score and freshness.

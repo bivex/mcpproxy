@@ -31,12 +31,14 @@ class ConfigLoader:
         embedder_type = EmbedderType(os.getenv("SP_EMBEDDER", "BM25"))
         hf_model = os.getenv("SP_HF_MODEL")
         top_k = int(os.getenv("SP_TOP_K", "5"))
+        tool_name_limit = int(os.getenv("SP_TOOL_NAME_LIMIT", "60"))
 
         return ProxyConfig(
             mcp_servers=mcp_servers,
             embedder=embedder_type,
             hf_model=hf_model,
             top_k=top_k,
+            tool_name_limit=tool_name_limit,
         )
 
     def resolve_env_vars(self, text: str) -> str:
@@ -66,3 +68,4 @@ class ConfigLoader:
         logger.info("  SP_EMBEDDER=BM25|HF|OPENAI")
         logger.info("  SP_HF_MODEL=sentence-transformers/all-MiniLM-L6-v2")
         logger.info("  OPENAI_API_KEY=your_key_here")
+        logger.info("  SP_TOOL_NAME_LIMIT=60  # Maximum tool name length")

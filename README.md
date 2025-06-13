@@ -183,10 +183,51 @@ mcpproxy/
 | `SP_EMBEDDER`    | `BM25`, `HF`, `OPENAI`        | `BM25`  | Embedding backend |
 | `SP_HF_MODEL`    | HuggingFace model name        | `sentence-transformers/all-MiniLM-L6-v2` | HF model |
 | `SP_TOP_K`       | Integer                       | `5`     | Number of tools to register |
+| `SP_TOOL_NAME_LIMIT` | Integer                   | `60`    | Maximum tool name length |
+| `SP_LIST_CHANGED_EXEC` | Shell command             | -       | External command to execute after tool changes (see [Client Compatibility](#client-compatibility)) |
 | `OPENAI_API_KEY` | Your OpenAI API key           | -       | Required for OpenAI embedder |
 | `MCP_CONFIG_PATH`| Path to config file           | `mcp_config.json` | Config file location |
 | `PROXY_HOST`     | Host to bind                  | `localhost` | Server host |
 | `PROXY_PORT`     | Port to bind                  | `8000`  | Server port |
+
+## Client Compatibility
+
+### MCP Tool List Refresh Workaround
+
+Some MCP clients (like Cursor IDE) don't properly handle the standard `tools/list_changed` notification when new tools are registered. As a temporary workaround, you can configure the proxy to execute an external command after tool changes to trigger client refresh.
+
+#### For Cursor IDE
+
+Set the `SP_LIST_CHANGED_EXEC` environment variable to touch the MCP configuration file:
+
+```bash
+# For macOS/Linux
+export SP_LIST_CHANGED_EXEC="touch $HOME/.cursor/mcp.json"
+
+# For Windows (PowerShell)
+$env:SP_LIST_CHANGED_EXEC = "cmd /c copy `"$HOME\.cursor\mcp.json`" +,,"
+```
+
+This causes Cursor to detect the config file change and refresh its tool list.
+
+#### How it Works
+
+1. When you call `retrieve_tools`, the proxy registers new tools
+2. Standard `tools/list_changed` notification is sent (proper MCP way)
+3. If `SP_LIST_CHANGED_EXEC` is set, the command is executed asynchronously
+4. The command triggers the MCP client to refresh its tool list
+
+#### Security Note
+
+⚠️ **Important**: The command in `SP_LIST_CHANGED_EXEC` is executed with shell privileges. Only use trusted commands and never set this variable to user-provided input.
+
+#### When Not to Use
+
+- Your MCP client properly handles `tools/list_changed` notifications
+- You're using the proxy programmatically (not through an MCP client)
+- Security policies prohibit executing external commands
+
+This feature is disabled by default and only executes when explicitly configured.
 
 ## Development
 

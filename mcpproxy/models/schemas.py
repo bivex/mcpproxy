@@ -31,6 +31,7 @@ class ProxyConfig(BaseModel):
     embedder: EmbedderType = EmbedderType.BM25
     hf_model: str | None = None
     top_k: int = 5
+    tool_name_limit: int = 60
 
 
 class ToolMetadata(BaseModel):

@@ -115,8 +115,22 @@ async def proxy_tool(**kwargs):
 SP_EMBEDDER=BM25          # BM25, HF, OPENAI
 SP_HF_MODEL=all-MiniLM-L6-v2  # For HF embedder
 SP_TOP_K=5                # Number of tools to register per query
+SP_LIST_CHANGED_EXEC=...  # External command to trigger client refresh (optional)
 OPENAI_API_KEY=...        # For OpenAI embedder
 ```
+
+### Client Compatibility Features
+
+**SP_LIST_CHANGED_EXEC:** Executes external command after tool registration changes.
+
+**Purpose:** Workaround for MCP clients that don't properly handle `tools/list_changed` notifications.
+
+**Implementation:**
+- Command is executed asynchronously after sending standard MCP notification
+- 5-second timeout with proper error handling
+- Disabled by default (only when explicitly set)
+
+**Security:** Command executed with shell privileges - use only trusted commands.
 
 ## Usage Flow
 
