@@ -67,5 +67,4 @@ class ConfigLoader:
         logger.info("Set environment variables:")
         logger.info("  MCPPROXY_EMBEDDER=BM25|HF|OPENAI")
         logger.info("  MCPPROXY_HF_MODEL=sentence-transformers/all-MiniLM-L6-v2")
-        logger.info("  OPENAI_API_KEY=your_key_here")
         logger.info("  MCPPROXY_TOOL_NAME_LIMIT=60  # Maximum tool name length")
