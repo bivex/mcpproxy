@@ -77,6 +77,7 @@ A3[company-mcp-server-with-oauth]
 
 | Variable         | Allowed values                                | Default |
 | ---------------- | --------------------------------------------- | ------- |
+| `MCPPROXY_ROUTING_TYPE` | `DYNAMIC`, `CALL_TOOL`                      | `CALL_TOOL` |
 | `MCPPROXY_EMBEDDER`    | `BM25`, `HF`, `OPENAI`                        | `BM25`  |
 | `MCPPROXY_HF_MODEL`    | e.g. `sentence-transformers/all-MiniLM-L6-v2` | —       |
 | `MCPPROXY_TOOLS_LIMIT` | Integer (1-100)                               | `15`    |
