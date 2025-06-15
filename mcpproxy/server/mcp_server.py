@@ -351,7 +351,11 @@ class SmartMCPProxyServer:
                         {
                             "message": f"Found {len(discovered_tools)} tools. Use 'call_tool' to execute them.",
                             "tools": discovered_tools,
-                            "routing_type": "CALL_TOOL",
+                            "newly_registered": [],  # No registration in CALL_TOOL mode
+                            "evicted_tools": [],  # No eviction in CALL_TOOL mode
+                            "pool_size": 0,  # No pool in CALL_TOOL mode
+                            "pool_limit": self.tools_limit,
+                            "total_available_tools": len(self.proxified_tools),
                             "query": query,
                         }
                     )
@@ -465,7 +469,7 @@ class SmartMCPProxyServer:
                         "evicted_tools": evicted_tools,
                         "pool_size": len(self.current_tool_registrations),
                         "pool_limit": self.tools_limit,
-                        "routing_type": "DYNAMIC",
+                        "total_available_tools": len(self.proxified_tools),
                         "query": query,
                     }
                 )
