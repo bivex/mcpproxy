@@ -112,6 +112,7 @@ async def proxy_tool(**kwargs):
 ## Environment Variables
 
 ```bash
+MCPPROXY_ROUTING_TYPE=CALL_TOOL  # CALL_TOOL (default) or DYNAMIC
 MCPPROXY_EMBEDDER=BM25          # BM25, HF, OPENAI
 MCPPROXY_HF_MODEL=all-MiniLM-L6-v2  # For HF embedder
 MCPPROXY_TOP_K=5                # Number of tools to register per query

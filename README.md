@@ -62,6 +62,7 @@ A federating gateway that sits between AI agents and multiple Model Context Prot
 
 ## Features
 
+- **Flexible Routing Strategies**: Two modes - `DYNAMIC` (tools registered on-demand) or `CALL_TOOL` (proxy-only execution)
 - **Dynamic Tool Discovery**: Automatically discovers tools from multiple MCP servers
 - **Intelligent Search**: Uses configurable embedding backends (BM25, HuggingFace, OpenAI) to find relevant tools
 - **One-Click Tool Access**: Single `retrieve_tools` function that searches, registers, and exposes the top 5 most relevant tools
@@ -120,13 +121,41 @@ The proxy will:
 2. Index them using the chosen embedding backend
 3. Start MCP server, by default transport is stdio, you can use MCPPROXY_TRANSPORT to change it to streamable-http or sse
 
+## Routing Strategies
+
+Smart MCP Proxy supports two routing strategies:
+
+### DYNAMIC Mode
+- **Behavior**: AI agent calls `retrieve_tools`, which searches and dynamically registers the most relevant tools as MCP tools
+- **Tool Registration**: Tools become available in the MCP protocol after `retrieve_tools` call
+- **Client View**: Sees both `retrieve_tools` and the registered tools (e.g., `company_create_user`, `storage_upload_file`)
+- **Use Case**: Best for clients that can handle dynamic tool registration and notifications
+
+### CALL_TOOL Mode (Default)
+- **Behavior**: AI agent calls `retrieve_tools` to discover tools, then uses `call_tool` to execute them
+- **Tool Registration**: No dynamic registration - tools are executed through the proxy
+- **Client View**: Only sees `retrieve_tools` and `call_tool` tools
+- **Use Case**: Better for clients with tool registration limits or simpler tool management
+
+```bash
+# Set routing strategy
+export MCPPROXY_ROUTING_TYPE=DYNAMIC    # or CALL_TOOL (default)
+```
+
 ## Usage
 ### Cursor IDE
 
 See example on the top of the [README.md](README.md) file.
 
 ### For AI Agents
-TBD
+
+**DYNAMIC Mode Usage:**
+1. Call `retrieve_tools("user management")` 
+2. Use the returned tools directly (e.g., `company_create_user`)
+
+**CALL_TOOL Mode Usage:**
+1. Call `retrieve_tools("user management")`
+2. Call `call_tool("company_create_user", {"name": "john", "email": "john@example.com"})`
 
 ### Programmatic Usage
 
@@ -169,6 +198,7 @@ mcpproxy/
 
 | Variable         | Values                        | Default | Description |
 |------------------|-------------------------------|---------|-------------|
+| `MCPPROXY_ROUTING_TYPE` | `DYNAMIC`, `CALL_TOOL`       | `CALL_TOOL` | Tool routing strategy |
 | `MCPPROXY_EMBEDDER`    | `BM25`, `HF`, `OPENAI`        | `BM25`  | Embedding backend |
 | `MCPPROXY_HF_MODEL`    | HuggingFace model name        | `sentence-transformers/all-MiniLM-L6-v2` | HF model |
 | `MCPPROXY_TOP_K`       | Integer                       | `5`     | Number of tools to register |

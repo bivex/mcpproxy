@@ -65,6 +65,11 @@ class SmartMCPProxyServer:
         # External command execution after tools list changes
         self.list_changed_exec_cmd = os.getenv("MCPPROXY_LIST_CHANGED_EXEC")
 
+        # Routing type configuration
+        self.routing_type = os.getenv("MCPPROXY_ROUTING_TYPE", "CALL_TOOL").upper()
+        if self.routing_type not in ["DYNAMIC", "CALL_TOOL"]:
+            raise ValueError(f"Invalid MCPPROXY_ROUTING_TYPE: {self.routing_type}. Must be 'DYNAMIC' or 'CALL_TOOL'")
+
         # Will be initialized in lifespan
         self.persistence: PersistenceFacade | None = None
         self.indexer: IndexerFacade | None = None
@@ -84,14 +89,24 @@ class SmartMCPProxyServer:
         ] = {}  # tool_name -> {timestamp, score, original_score}
 
         # Initialize FastMCP server with transport configuration
-        fastmcp_kwargs = {
-            "name": "Smart MCP Proxy",
-            "instructions": """
+        if self.routing_type == "CALL_TOOL":
+            instructions = """
+            This server provides intelligent tool discovery and proxying for MCP servers.
+            First, use 'retrieve_tools' to search and discover available tools from configured upstream servers.
+            Then, use 'call_tool' with the tool name and arguments to execute the tool on the upstream server.
+            Tools are not dynamically registered - use the call_tool interface instead.
+            """
+        else:  # DYNAMIC
+            instructions = """
             This server provides intelligent tool discovery and proxying for MCP servers.
             Use 'retrieve_tools' to search and access tools from configured upstream servers.
             proxy tools are dynamically created and registered on the fly in accordance with the search results.
             Pass the original user query (if possible) to the 'retrieve_tools' tool to get the search results.
-            """,
+            """
+
+        fastmcp_kwargs = {
+            "name": "Smart MCP Proxy",
+            "instructions": instructions,
             "lifespan": self._lifespan,
         }
 
@@ -300,6 +315,48 @@ class SmartMCPProxyServer:
                         {"message": "No relevant tools found", "tools": []}
                     )
 
+                # For CALL_TOOL routing, just return tool information without registering
+                if self.routing_type == "CALL_TOOL":
+                    # Prepare tool information without registration
+                    discovered_tools = []
+                    for result in results:
+                        tool_name = self._sanitize_tool_name(
+                            result.tool.server_name, result.tool.name
+                        )
+                        
+                        # Get input schema from params_json if available, or from proxified tools
+                        input_schema = {}
+                        if tool_name in self.proxified_tools:
+                            proxified_tool = self.proxified_tools[tool_name]
+                            if hasattr(proxified_tool, 'parameters'):
+                                input_schema = proxified_tool.parameters
+                        elif result.tool.params_json:
+                            try:
+                                input_schema = json.loads(result.tool.params_json)
+                            except (json.JSONDecodeError, Exception):
+                                input_schema = {}
+                        
+                        discovered_tools.append(
+                            {
+                                "name": tool_name,
+                                "original_name": result.tool.name,
+                                "server": result.tool.server_name,
+                                "description": result.tool.description,
+                                "score": result.score,
+                                "input_schema": input_schema,
+                            }
+                        )
+
+                    return json.dumps(
+                        {
+                            "message": f"Found {len(discovered_tools)} tools. Use 'call_tool' to execute them.",
+                            "tools": discovered_tools,
+                            "routing_type": "CALL_TOOL",
+                            "query": query,
+                        }
+                    )
+
+                # For DYNAMIC routing, continue with existing registration logic
                 # Prepare tools for registration
                 tools_to_register = []
                 for result in results:
@@ -408,12 +465,85 @@ class SmartMCPProxyServer:
                         "evicted_tools": evicted_tools,
                         "pool_size": len(self.current_tool_registrations),
                         "pool_limit": self.tools_limit,
+                        "routing_type": "DYNAMIC",
                         "query": query,
                     }
                 )
 
             except Exception as e:
                 return json.dumps({"error": str(e)})
+
+        # Add call_tool function for CALL_TOOL routing type
+        if self.routing_type == "CALL_TOOL":
+            @self.mcp.tool()
+            async def call_tool(name: str, args: dict[str, Any]) -> str:
+                """Execute a tool on the upstream server using the call_tool interface.
+
+                Args:
+                    name: Name of the tool to execute (use names from retrieve_tools response)
+                    args: Arguments to pass to the tool
+
+                Returns:
+                    Tool execution result
+                """
+                logger = get_logger()
+                try:
+                    # Parse server name and tool name from the sanitized name
+                    # Format is typically: servername_toolname
+                    if "_" not in name:
+                        return json.dumps({"error": f"Invalid tool name format: {name}. Expected format: servername_toolname"})
+                    
+                    # Find the original tool in our indexed tools
+                    if not self.indexer:
+                        return json.dumps({"error": "Indexer not initialized"})
+                    
+                    # Search for the tool by name to get the original details
+                    # This is a bit of a hack - we search for the tool name to find the original
+                    all_tools = await self.persistence.get_all_tools() if self.persistence else []
+                    
+                    matching_tool = None
+                    for tool_metadata in all_tools:
+                        sanitized_name = self._sanitize_tool_name(tool_metadata.server_name, tool_metadata.name)
+                        if sanitized_name == name:
+                            matching_tool = tool_metadata
+                            break
+                    
+                    if not matching_tool:
+                        return json.dumps({"error": f"Tool '{name}' not found. Use retrieve_tools first to discover available tools."})
+                    
+                    # Get the proxy server for this tool's server
+                    server_name = matching_tool.server_name
+                    proxy_server = self.proxy_servers.get(server_name)
+                    if not proxy_server:
+                        return json.dumps({"error": f"Server '{server_name}' not available"})
+                    
+                    # Execute the tool on the upstream server
+                    original_tool_name = matching_tool.name
+                    logger.debug(f"Executing tool '{original_tool_name}' on server '{server_name}' with args: {args}")
+                    
+                    result = await proxy_server._mcp_call_tool(original_tool_name, args)
+                    
+                    # Process the result
+                    output = ""
+                    if result and len(result) > 0:
+                        content = result[0]
+                        if hasattr(content, "text"):
+                            output = content.text
+                        elif isinstance(content, dict) and "text" in content:
+                            output = content["text"]
+                        else:
+                            output = str(result)
+                    else:
+                        output = str(result)
+
+                    # Apply output truncation if configured
+                    output = self._truncate_output(output)
+                    
+                    return output
+
+                except Exception as e:
+                    logger.error(f"Error executing tool '{name}': {e}")
+                    return json.dumps({"error": f"Error executing tool '{name}': {str(e)}"})
 
     def _sanitize_tool_name(self, server_name: str, tool_name: str) -> str:
         """Sanitize tool name to comply with Google Gemini API requirements.
