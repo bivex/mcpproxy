@@ -167,3 +167,4 @@ Thumbs.db
 *.backup 
 
 .python-version
+*.json
