@@ -568,7 +568,7 @@ class SmartMCPProxyServer:
             # Wait for completion with timeout
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(), 
-                timeout=5.0  # 5 second timeout
+                timeout=60.0  # 60 second timeout
             )
             
             if process.returncode == 0:
@@ -580,7 +580,7 @@ class SmartMCPProxyServer:
                 )
                 
         except asyncio.TimeoutError:
-            logger.warning("List changed command timed out after 5 seconds")
+            logger.warning("List changed command timed out after 60 seconds")
         except Exception as e:
             logger.warning(f"Error executing list changed command: {e}")
 
