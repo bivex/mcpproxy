@@ -234,7 +234,9 @@ mcpproxy/
 
 ### MCP Tool List Refresh Workaround
 
-Some MCP clients (like Cursor IDE) don't properly handle the standard `tools/list_changed` notification when new tools are registered. As a temporary workaround, you can configure the proxy to execute an external command after tool changes to trigger client refresh.
+**This is only needed for DYNAMIC routing mode.** The default CALL_TOOL routing mode doesn't require `MCPPROXY_LIST_CHANGED_EXEC` since tools are not dynamically registered.
+
+Some MCP clients (like Cursor IDE) don't properly handle the standard `tools/list_changed` notification when new tools are registered in DYNAMIC mode. As a temporary workaround, you can configure the proxy to execute an external command after tool changes to trigger client refresh.
 
 #### For Cursor IDE
 
