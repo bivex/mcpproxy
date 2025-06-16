@@ -950,12 +950,17 @@ class SmartMCPProxyServer:
                         
                 elif server_config.command:
                     # Create client for command-based server
+                    # Ensure env is always a dict, never None
+                    env_value = getattr(server_config, "env", {})
+                    if env_value is None:
+                        env_value = {}
+                    
                     config_dict = {
                         "mcpServers": {
                             server_name: {
                                 "command": server_config.command,
                                 "args": getattr(server_config, "args", []),
-                                "env": getattr(server_config, "env", {}),
+                                "env": env_value,
                             }
                         }
                     }
