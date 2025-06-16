@@ -4,10 +4,15 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
+## Quick Start
+install with pip:
+```bash
+pip install smart-mcp-proxy
+```
+
 ## Cursor IDE Integration
 
 To use mcpproxy in Cursor IDE, add this configuration to your `~/.cursor/mcp.json`:
-So far Cursor IDE does not listen notifications (part of MCP standard) and don't refresh tools list, workaround is to use MCPPROXY_LIST_CHANGED_EXEC to touch mcp.json file. When Cursor will implement notifications, this workaround can be removed.
 
 ```json
 {
@@ -15,8 +20,7 @@ So far Cursor IDE does not listen notifications (part of MCP standard) and don't
     "mcp-proxy": {
       "command": "mcpproxy",
       "env": {
-        "MCPPROXY_CONFIG_PATH": "/Users/user/.cursor/mcp_proxy.json",
-        "MCPPROXY_LIST_CHANGED_EXEC": "touch $HOME/.cursor/mcp.json"
+        "MCPPROXY_CONFIG_PATH": "/Users/user/.cursor/mcp_proxy.json"
       }
     }
   }
@@ -44,6 +48,22 @@ Then create a separate `~/.cursor/mcp_proxy.json` with your actual(!) MCP server
 ```
 
 **Important**: The `mcp_proxy.json` must be a different file than `mcp.json` to avoid circular proxy connections. The proxy configuration file has the same format as Cursor's MCP configuration but contains the actual MCP servers you want to federate.
+
+## Google ADK Integration
+
+To use mcpproxy with Google ADK, you can integrate it using the MCPToolset:
+
+```python
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioServerParameters
+
+proxy_tool = MCPToolset(
+    connection_params=StdioServerParameters(
+        command="mcpproxy",
+        args=[],
+        env={"MCPPROXY_CONFIG_PATH": "/Users/user/.cursor/mcp_proxy.json"}
+    )
+)
+```
 
 ## Tip for better LLM results (copy-paste into your system/dev prompt):
 
