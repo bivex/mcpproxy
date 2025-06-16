@@ -70,6 +70,15 @@ class SmartMCPProxyServer:
         if self.routing_type not in ["DYNAMIC", "CALL_TOOL"]:
             raise ValueError(f"Invalid MCPPROXY_ROUTING_TYPE: {self.routing_type}. Must be 'DYNAMIC' or 'CALL_TOOL'")
 
+        # Tool name limit configuration
+        tool_name_limit_env = os.getenv("MCPPROXY_TOOL_NAME_LIMIT")
+        if tool_name_limit_env is not None:
+            self.tool_name_limit = int(tool_name_limit_env)
+        elif hasattr(self.config, "tool_name_limit") and self.config.tool_name_limit:
+            self.tool_name_limit = self.config.tool_name_limit
+        else:
+            self.tool_name_limit = 60  # Default value
+
         # Will be initialized in lifespan
         self.persistence: PersistenceFacade | None = None
         self.indexer: IndexerFacade | None = None
@@ -594,7 +603,7 @@ class SmartMCPProxyServer:
             combined = f"tool_{combined}"
 
         # Truncate to configured limit if needed
-        max_length = self.config.tool_name_limit
+        max_length = self.tool_name_limit
         if len(combined) > max_length:
             # Try to keep server prefix if possible
             if "_" in combined:
