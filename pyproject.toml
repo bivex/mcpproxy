@@ -1,6 +1,6 @@
 [project]
 name = "smart-mcp-proxy"
-version = "0.3.0"
+version = "0.3.1"
 description = "Smart MCP Proxy - A federating gateway for MCP servers with intelligent tool discovery"
 readme = "README.md"
 requires-python = ">=3.11.1"
