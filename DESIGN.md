@@ -79,10 +79,19 @@ A3[company-mcp-server-with-oauth]
 | ---------------- | --------------------------------------------- | ------- |
 | `MCPPROXY_ROUTING_TYPE` | `DYNAMIC`, `CALL_TOOL`                      | `CALL_TOOL` |
 | `MCPPROXY_EMBEDDER`    | `BM25`, `HF`, `OPENAI`                        | `BM25`  |
-| `MCPPROXY_HF_MODEL`    | e.g. `sentence-transformers/all-MiniLM-L6-v2` | —       |
+| `MCPPROXY_HF_MODEL`    | e.g. `sentence-transformers/all-MiniLM-L6-v2` | `sentence-transformers/all-MiniLM-L6-v2` |
+| `MCPPROXY_TOP_K`       | Integer (1-50)                                | `5`     |
 | `MCPPROXY_TOOLS_LIMIT` | Integer (1-100)                               | `15`    |
 | `MCPPROXY_TOOL_NAME_LIMIT` | Integer (10-200)                          | `60`    |
+| `MCPPROXY_TRUNCATE_OUTPUT_LEN` | Integer                               | — (disabled) |
 | `MCPPROXY_TRANSPORT` | `stdio`, `streamable-http`, `sse` | `stdio` |
+| `MCPPROXY_HOST`        | Host address                                  | `127.0.0.1` |
+| `MCPPROXY_PORT`        | Port number                                   | `8000`  |
+| `MCPPROXY_CONFIG_PATH` | Path to config file                           | `mcp_config.json` |
+| `MCPPROXY_DATA_DIR`    | Directory for data files                      | `~/.mcpproxy` |
+| `MCPPROXY_LOG_LEVEL`   | `DEBUG`, `INFO`, `WARNING`, `ERROR`           | `INFO`  |
+| `MCPPROXY_LOG_FILE`    | Path to log file                              | — (console only) |
+| `MCPPROXY_RESET_DATA`  | `true`, `false`                               | `false` |
 | `MCPPROXY_LIST_CHANGED_EXEC` | command to execute after tools list changes | — |
 
 The proxy chooses the search driver at startup; mixed‑mode hybrid search (lexical + vector) is possible in future.
@@ -114,6 +123,15 @@ This ensures:
 - High-scoring tools are prioritized
 - Recently accessed tools stay fresh
 - Older, lower-scoring tools are evicted first
+
+### 4.5 Output Truncation
+
+The proxy supports output truncation to prevent context bloating from large tool responses:
+
+- `MCPPROXY_TRUNCATE_OUTPUT_LEN`: When set, tool outputs exceeding this character limit are truncated
+- Truncation preserves both the beginning and end of the output (first N chars + marker + last 50 chars)
+- Disabled by default to preserve full tool output integrity
+- Useful for managing token usage in AI agents with context limits
 
 ## 5 SQLite + Faiss Schema
 

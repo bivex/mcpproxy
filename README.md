@@ -162,6 +162,22 @@ Smart MCP Proxy supports two routing strategies:
 export MCPPROXY_ROUTING_TYPE=DYNAMIC    # or CALL_TOOL (default)
 ```
 
+## Output Truncation
+
+To prevent context bloating from large tool outputs, you can configure output truncation:
+
+```bash
+# Truncate tool outputs to 2000 characters (disabled by default)
+export MCPPROXY_TRUNCATE_OUTPUT_LEN=2000
+```
+
+When enabled, outputs exceeding the limit are truncated showing:
+- First portion of the output
+- `<truncated by smart mcp proxy>` marker  
+- Last 50 characters of the output
+
+This helps manage token usage while preserving both the beginning and end of outputs.
+
 ## Usage
 ### Cursor IDE
 
@@ -222,13 +238,18 @@ mcpproxy/
 | `MCPPROXY_EMBEDDER`    | `BM25`, `HF`, `OPENAI`        | `BM25`  | Embedding backend |
 | `MCPPROXY_HF_MODEL`    | HuggingFace model name        | `sentence-transformers/all-MiniLM-L6-v2` | HF model |
 | `MCPPROXY_TOP_K`       | Integer                       | `5`     | Number of tools to register |
+| `MCPPROXY_TOOLS_LIMIT` | Integer                       | `15`    | Maximum number of tools in active pool |
 | `MCPPROXY_TOOL_NAME_LIMIT` | Integer                   | `60`    | Maximum tool name length |
+| `MCPPROXY_TRUNCATE_OUTPUT_LEN` | Integer               | -       | Truncate tool output to prevent context bloating (disabled by default) |
 | `MCPPROXY_LIST_CHANGED_EXEC` | Shell command             | -       | External command to execute after tool changes (see [Client Compatibility](#client-compatibility)) |
 | `MCPPROXY_DATA_DIR`    | Directory path                | `~/.mcpproxy` | Directory for database and index files |
 | `MCPPROXY_CONFIG_PATH`| Path to config file           | `mcp_config.json` | Config file location |
-| `MCPPROXY_HOST`     | Host to bind                  | `localhost` | Server host |
+| `MCPPROXY_HOST`     | Host to bind                  | `127.0.0.1` | Server host |
 | `MCPPROXY_PORT`     | Port to bind                  | `8000`  | Server port |
 | `MCPPROXY_TRANSPORT` | Transport to use              | `stdio` | Transport to use |
+| `MCPPROXY_LOG_LEVEL` | Log level                     | `INFO`  | Logging level (DEBUG, INFO, WARNING, ERROR) |
+| `MCPPROXY_LOG_FILE`  | File path                     | -       | Optional log file path |
+| `MCPPROXY_RESET_DATA` | Boolean                      | `false` | Reset all data (useful when dimensions change) |
 
 ## Client Compatibility
 
