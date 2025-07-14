@@ -112,7 +112,9 @@ class IndexerFacade:
             "description": tool_obj.description,
             "parameters": tool_obj.parameters,
             "tags": list(tool_obj.tags) if tool_obj.tags else [],
-            "annotations": tool_obj.annotations,
+            "annotations": str(tool_obj.annotations)
+            if tool_obj.annotations
+            else None,
         }
         tool_hash = compute_tool_hash(
             tool_obj.name, tool_obj.description or "", tool_data
