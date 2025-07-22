@@ -405,7 +405,7 @@ class TestIndexerFacade:
         mock_persistence.get_tool_by_hash.assert_called_once()
 
         if expected_store_call:
-            self._assert_tool_stored_correctly(mock_persistence, name, description, server_name, params, tags, annotations)
+            self._assert_tool_stored_correctly(mock_persistence, tool_data)
         else:
             mock_persistence.store_tool_with_vector.assert_not_called()
 
@@ -420,20 +420,20 @@ class TestIndexerFacade:
         )
         mock_persistence.get_tool_by_hash.return_value = existing_tool
 
-    def _assert_tool_stored_correctly(self, mock_persistence, name, description, server_name, params, tags, annotations):
+    def _assert_tool_stored_correctly(self, mock_persistence, tool_data: ToolData):
         mock_persistence.store_tool_with_vector.assert_called_once()
         call_args = mock_persistence.store_tool_with_vector.call_args
         stored_tool, _ = call_args[0]
-        assert stored_tool.name == name
-        assert stored_tool.description == description
-        assert stored_tool.server_name == server_name
-        if params: # Check if params are part of params_json
+        assert stored_tool.name == tool_data.name
+        assert stored_tool.description == tool_data.description
+        assert stored_tool.server_name == tool_data.server_name
+        if tool_data.params: # Check if params are part of params_json
             assert stored_tool.params_json is not None
-            assert json.loads(stored_tool.params_json).get("parameters").get("properties") == params.get("properties")
-        if tags:
-            assert json.loads(stored_tool.params_json).get("tags") == tags
-        if annotations:
-            assert json.loads(stored_tool.params_json).get("annotations") == annotations
+            assert json.loads(stored_tool.params_json).get("parameters").get("properties") == tool_data.params.get("properties")
+        if tool_data.tags:
+            assert json.loads(stored_tool.params_json).get("tags") == tool_data.tags
+        if tool_data.annotations:
+            assert json.loads(stored_tool.params_json).get("annotations") == tool_data.annotations
 
     @pytest.mark.parametrize(
         "initial_needs_reindex, expected_reindex_call",

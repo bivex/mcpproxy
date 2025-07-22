@@ -202,7 +202,8 @@ class TestToolPoolManagement:
                 "query": query,
             })
 
-        server.tool_pool_manager.retrieve_tools.side_effect = mock_retrieve_tools_side_effect
+        manager = server.tool_pool_manager
+        manager.retrieve_tools.side_effect = mock_retrieve_tools_side_effect
 
         # Call retrieve_tools via the public interface
         result_json = await server.mcp.retrieve_tools("search for existing tool")
@@ -224,24 +225,23 @@ class TestToolPoolManagement:
         """Test that no eviction occurs when under the pool limit."""
         server = mock_server_with_indexer
 
+        manager = server.tool_pool_manager
+
         # Set up pool with only 1 tool (under limit of 3) in mock ToolPoolManager
         tool_name = "server1_tool1"
-        server.tool_pool_manager.current_tool_registrations = {tool_name: MagicMock()}
-        server.tool_pool_manager.tool_pool_metadata = {
+        manager.current_tool_registrations = {tool_name: MagicMock()}
+        manager.tool_pool_metadata = {
             tool_name: {"timestamp": time.time(), "score": 0.5}
         }
-        server.tool_pool_manager.get_proxified_tools.return_value = {tool_name: MagicMock()}
+        manager.get_proxified_tools.return_value = {tool_name: MagicMock()}
 
         # Mock search results - 1 new tool
         search_results = [self.create_mock_search_result("new_tool", "server1", 0.7)]
-        server.indexer.search_tools = AsyncMock(return_value=search_results)
+        manager.indexer.search_tools = AsyncMock(return_value=search_results)
 
         # Configure mock ToolPoolManager methods
-        server.tool_pool_manager._enforce_tool_pool_limit = AsyncMock(return_value=[])
-        server.tool_pool_manager._register_proxy_tool = AsyncMock(side_effect=lambda tool_meta, t_name, score, s_name: 
-            server.tool_pool_manager.current_tool_registrations.update({t_name: MagicMock()}) or 
-            server.tool_pool_manager.tool_pool_metadata.update({t_name: {"timestamp": time.time(), "score": score, "original_score": score}})
-        )
+        manager._enforce_tool_pool_limit = AsyncMock(return_value=[])
+        manager._register_proxy_tool = AsyncMock(side_effect=self._register_proxy_tool_side_effect(manager))
 
         # Call retrieve_tools via the public interface
         result_json = await server.mcp.retrieve_tools("search for tools")
@@ -253,8 +253,14 @@ class TestToolPoolManagement:
         assert result["pool_size"] == 2  # 1 existing + 1 new
         
         # Verify that the mocked internal methods of ToolPoolManager were called
-        server.tool_pool_manager._enforce_tool_pool_limit.assert_called_once()
-        server.tool_pool_manager._register_proxy_tool.assert_called_once()
+        manager._enforce_tool_pool_limit.assert_called_once()
+        manager._register_proxy_tool.assert_called_once()
+
+    def _register_proxy_tool_side_effect(self, manager):
+        def side_effect(tool_meta, t_name, score, s_name):
+            manager.current_tool_registrations.update({t_name: MagicMock()})
+            manager.tool_pool_metadata.update({t_name: {"timestamp": time.time(), "score": score, "original_score": score}})
+        return side_effect
 
     @pytest.mark.asyncio
     async def test_error_handling(self, mock_server_with_indexer):
@@ -296,10 +302,12 @@ class TestToolPoolManagement:
         """Test that pool metadata stays consistent across operations."""
         server = mock_server_with_indexer
 
+        manager = server.tool_pool_manager
+
         # Set up initial state on the mock ToolPoolManager
-        server.tool_pool_manager.current_tool_registrations = {}
-        server.tool_pool_manager.tool_pool_metadata = {}
-        server.tool_pool_manager.get_proxified_tools.return_value = {}
+        manager.current_tool_registrations = {}
+        manager.tool_pool_metadata = {}
+        manager.get_proxified_tools.return_value = {}
 
         # Mock search results
         search_results = [

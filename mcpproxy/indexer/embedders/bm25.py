@@ -61,9 +61,10 @@ class BM25Embedder(BaseEmbedder):
         try:
             self._remove_bm25_index_directory()
             self._remove_stale_bm25_files()
-        except Exception:
-            # If cleanup fails, continue - the reset_index() call above is most important
-            pass
+        except Exception as e:
+            # If cleanup fails, log the error but continue - the reset_index() call above is most important
+            logger = get_logger()
+            logger.warning(f"Error during BM25 stored data cleanup: {e}")
 
     def _remove_bm25_index_directory(self) -> None:
         import shutil
@@ -216,8 +217,9 @@ class BM25Embedder(BaseEmbedder):
 
             results, scores = self._tokenize_and_retrieve(query, retriever, search_corpus, k)
             return self._format_search_results(results, scores, search_corpus)
-        except Exception:
-            # If search fails, return empty results
+        except Exception as e:
+            logger = get_logger()
+            logger.error(f"Error during BM25 search_similar: {e}")
             return []
 
     async def _get_search_context(self, candidate_texts: list[str] | None):

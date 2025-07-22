@@ -24,7 +24,9 @@ class TestToolPoolManagerUnit:
         mock.remove_tool = MagicMock()
         mock.add_tool = MagicMock()
         mock._mcp_server = MagicMock()
-        mock._mcp_server.request_context.session.send_notification = AsyncMock()
+        request_context = mock._mcp_server.request_context
+        session = request_context.session
+        session.send_notification = AsyncMock()
         return mock
 
     @pytest.fixture
@@ -64,22 +66,27 @@ class TestToolPoolManagerUnit:
         return MagicMock(side_effect=lambda x, y: x) # Simply return original text
 
     @pytest.fixture
-    def mock_tool_pool_manager(
-        self,
-        mock_fastmcp_app,
-        mock_indexer,
-        mock_persistence,
-        mock_proxy_config,
-        mock_proxy_servers,
-        mock_truncate_output_fn,
+    def mock_tool_pool_dependencies_fixture(
+        self, mock_indexer, mock_persistence, mock_proxy_config, mock_proxy_servers
     ):
-        """Fixture for a ToolPoolManager instance with mocked dependencies."""
-        tool_pool_dependencies = ToolPoolManagerDependencies(
+        """Fixture for ToolPoolManagerDependencies instance with mocked dependencies."""
+        from mcpproxy.server.tool_pool_manager import ToolPoolManagerDependencies
+        return ToolPoolManagerDependencies(
             indexer=mock_indexer,
             persistence=mock_persistence,
             config=mock_proxy_config,
             proxy_servers=mock_proxy_servers,
         )
+
+    @pytest.fixture
+    def mock_tool_pool_manager(
+        self,
+        mock_fastmcp_app,
+        mock_tool_pool_dependencies_fixture,
+        mock_truncate_output_fn,
+    ):
+        """Fixture for a ToolPoolManager instance with mocked dependencies."""
+        tool_pool_dependencies = mock_tool_pool_dependencies_fixture
 
         with patch("mcpproxy.server.tool_pool_manager.ToolPoolManager._enforce_tool_pool_limit", new_callable=AsyncMock) as mock_enforce_limit, \
              patch("mcpproxy.server.tool_pool_manager.ToolPoolManager._evict_tool", new_callable=AsyncMock) as mock_evict_tool, \
@@ -174,11 +181,19 @@ class TestToolPoolManagerUnit:
         """Test tool pool limit enforcement and eviction scenarios."""
         manager = mock_tool_pool_manager
 
-        # Manually set the initial state of the manager's internal dictionaries
+        self._setup_pool_manager_initial_state(manager, initial_tools_metadata)
+        self._prepare_mock_search_results(manager, new_tools_info)
+
+        # Call the public method that triggers the logic
+        await manager.retrieve_tools("some query")
+
+        self._assert_pool_limit_enforcement(manager, expected_evicted_count, expected_evicted_names, expected_registered_count)
+
+    def _setup_pool_manager_initial_state(self, manager, initial_tools_metadata):
         manager.current_tool_registrations = {name: MagicMock() for name in initial_tools_metadata}
         manager.tool_pool_metadata = initial_tools_metadata
 
-        # Prepare mock search results for the indexer
+    def _prepare_mock_search_results(self, manager, new_tools_info):
         mock_search_results = []
         for name, score in new_tools_info:
             tool_obj = MagicMock(spec=ToolMetadata)
@@ -187,22 +202,15 @@ class TestToolPoolManagerUnit:
             tool_obj.description = f"Description for {tool_obj.name}"
             tool_obj.parameters = {}
             mock_search_results.append(MagicMock(tool=tool_obj, score=score))
-        manager.indexer.search_tools.return_value = mock_search_results
+        mock_indexer_search_tools = manager.indexer.search_tools
+        mock_indexer_search_tools.return_value = mock_search_results
 
-        # Simulate the internal calls to _evict_tool and _register_proxy_tool
-        # These are already patched by the mock_tool_pool_manager fixture
-
-        # Call the public method that triggers the logic
-        await manager.retrieve_tools("some query")
-
-        # Verify eviction calls
+    def _assert_pool_limit_enforcement(self, manager, expected_evicted_count, expected_evicted_names, expected_registered_count):
         assert manager.mock_evict_tool.call_count == expected_evicted_count
         actual_evicted_names = [call.args[0] for call in manager.mock_evict_tool.call_args_list]
         assert sorted(actual_evicted_names) == sorted(expected_evicted_names)
-
-        # Verify registration calls (for new tools and existing ones that were considered fresh enough)
         assert manager.mock_register_proxy_tool.call_count == expected_registered_count
-        
+
     @pytest.mark.asyncio
     async def test_evict_tool_functionality(
         self, mock_tool_pool_manager, mock_fastmcp_app
