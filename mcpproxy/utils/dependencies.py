@@ -66,6 +66,18 @@ def optional_import(
         return MissingDependency()
 
 
+def resolve_env_vars(text: str) -> str:
+    """Resolve environment variables in text like ${VAR_NAME}."""
+    import os
+    import re
+
+    def replace_var(match):
+        var_name = match.group(1)
+        return os.getenv(var_name, match.group(0))
+
+    return re.sub(r"\$\{([^}]+)\}", replace_var, text)
+
+
 def check_embedder_dependencies(embedder_type: str) -> None:
     """Check dependencies for specific embedder types."""
     if embedder_type == "HF":

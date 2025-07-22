@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ..logging import get_logger
 from ..models.schemas import EmbedderType, ProxyConfig, ServerConfig
+from ..utils.dependencies import resolve_env_vars
 
 TOP_K_DEFAULT = 5  # Default number of top results for search
 
@@ -47,16 +48,6 @@ class ConfigLoader:
             top_k=top_k,
             tool_name_limit=tool_name_limit,
         )
-
-    def resolve_env_vars(self, text: str) -> str:
-        """Resolve environment variables in text like ${VAR_NAME}."""
-        import re
-
-        def replace_var(match):
-            var_name = match.group(1)
-            return os.getenv(var_name, match.group(0))
-
-        return re.sub(r"\$\{([^}]+)\}", replace_var, text)
 
     def create_sample_config(self, output_path: str | None = None) -> None:
         """Create a sample configuration file."""

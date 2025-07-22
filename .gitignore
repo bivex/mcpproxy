@@ -168,3 +168,7 @@ Thumbs.db
 
 .python-version
 *.json
+
+/.specstory
+
+out/
