@@ -6,8 +6,8 @@ from ..models.schemas import EmbedderType, SearchResult, ToolMetadata
 from ..persistence.facade import PersistenceFacade
 from ..utils.dependencies import check_embedder_dependencies
 from ..utils.hashing import compute_tool_hash
-from .base import BaseEmbedder
-from .bm25 import BM25Embedder
+from .embedders.base import BaseEmbedder
+from .embedders.bm25 import BM25Embedder
 
 
 class IndexerFacade:
@@ -40,12 +40,12 @@ class IndexerFacade:
                 embedder.load_index()
             return embedder
         elif embedder_type == EmbedderType.HF:
-            from .huggingface import HuggingFaceEmbedder
+            from .embedders.huggingface import HuggingFaceEmbedder
 
             model_name = hf_model or "sentence-transformers/all-MiniLM-L6-v2"
             return HuggingFaceEmbedder(model_name)
         elif embedder_type == EmbedderType.OPENAI:
-            from .openai import OpenAIEmbedder
+            from .embedders.openai import OpenAIEmbedder
 
             return OpenAIEmbedder()
         else:

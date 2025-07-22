@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 
 from mcpproxy.models.schemas import SearchResult
 from mcpproxy.persistence.db import DatabaseManager
-from mcpproxy.persistence.faiss_store import FaissStore
+from mcpproxy.indexer.embedders.faiss_store import FaissStore
 from mcpproxy.models.tool_metadata import ToolMetadata
 
 

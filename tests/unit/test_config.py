@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from mcpproxy.models.schemas import EmbedderType, ProxyConfig, ServerConfig
-from mcpproxy.server.config import ConfigLoader
+from mcpproxy.server.config.config import ConfigLoader
 
 
 class TestConfigLoader:

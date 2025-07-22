@@ -11,8 +11,8 @@ import pytest
 import json
 from unittest.mock import MagicMock
 
-from mcpproxy.indexer.base import BaseEmbedder
-from mcpproxy.indexer.bm25 import BM25Embedder
+from mcpproxy.indexer.embedders.base import BaseEmbedder
+from mcpproxy.indexer.embedders.bm25 import BM25Embedder
 from mcpproxy.indexer.facade import IndexerFacade
 from mcpproxy.models.schemas import EmbedderType, SearchResult, ToolMetadata
 from mcpproxy.persistence.facade import PersistenceFacade # Import PersistenceFacade
