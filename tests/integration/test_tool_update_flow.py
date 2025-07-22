@@ -32,8 +32,9 @@ class TestToolUpdateFlow:
         await temp_indexer_facade.index_tool(tool_data_updated)
 
         # Should now have both versions (different hashes)
+        EXPECTED_TOOL_VERSIONS = 2
         all_tools = await temp_indexer_facade.persistence.get_all_tools()
-        assert len(all_tools) == 2
+        assert len(all_tools) == EXPECTED_TOOL_VERSIONS
 
         # Search should find the updated version when searching for "updated"
         results = await temp_indexer_facade.search_tools("updated content", k=5)

@@ -1,5 +1,6 @@
 import time
 from mcpproxy.logging import get_logger
+from mcpproxy.models.constants import TOOL_SCORE_WEIGHT, TOOL_FRESHNESS_WEIGHT, MAX_TOOL_AGE_MINUTES, SECONDS_IN_MINUTE
 
 logger = get_logger()
 
@@ -18,12 +19,12 @@ def calculate_tool_weight(score: float, added_timestamp: float) -> float:
 
     # Normalize age (0 = fresh, 1 = old)
     # Tools older than 30 minutes get maximum age penalty
-    max_age_seconds = 30 * 60  # 30 minutes
+    max_age_seconds = MAX_TOOL_AGE_MINUTES * SECONDS_IN_MINUTE
     age_normalized = min(1.0, age_seconds / max_age_seconds)
 
     # Weighted formula: 70% score, 30% freshness
-    score_weight = 0.7
-    freshness_weight = 0.3
+    score_weight = TOOL_SCORE_WEIGHT
+    freshness_weight = TOOL_FRESHNESS_WEIGHT
     freshness_score = 1.0 - age_normalized
 
     weighted_score = (score * score_weight) + (freshness_score * freshness_weight)

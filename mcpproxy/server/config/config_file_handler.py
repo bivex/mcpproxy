@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from mcpproxy.logging import get_logger
+from mcpproxy.models.constants import DEFAULT_TOOL_NAME_LIMIT, DEFAULT_TOOLS_LIMIT
 
 
 class ConfigFileHandler:
@@ -30,8 +31,8 @@ class ConfigFileHandler:
             "mcpServers": {
                 "core-docs": {"url": "http://localhost:8000/sse"},
             },
-            "tool_name_limit": 60,
-            "tools_limit": 15,
+            "tool_name_limit": DEFAULT_TOOL_NAME_LIMIT,
+            "tools_limit": DEFAULT_TOOLS_LIMIT,
         }
 
         with open(self.config_path, "w") as f:

@@ -38,8 +38,9 @@ class TestIncrementalIndexingFlow:
             await temp_indexer_facade.index_tool(tool_data)
 
         # Step 3: Verify incremental search works
+        EXPECTED_INITIAL_SEARCH_RESULTS = 2
         results = await temp_indexer_facade.search_tools("initial", k=5)
-        assert len(results) >= 2  # Should find initial_tool and related_initial
+        assert len(results) >= EXPECTED_INITIAL_SEARCH_RESULTS  # Should find initial_tool and related_initial
 
         found_names = {r.tool.name for r in results}
         assert "initial_tool" in found_names
@@ -53,5 +54,6 @@ class TestIncrementalIndexingFlow:
             "server2"
         )
 
-        assert len(server1_tools) == 3
+        EXPECTED_SERVER1_TOOLS_COUNT = 3
+        assert len(server1_tools) == EXPECTED_SERVER1_TOOLS_COUNT
         assert len(server2_tools) == 1 

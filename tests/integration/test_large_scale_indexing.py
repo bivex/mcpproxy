@@ -11,13 +11,14 @@ class TestLargeScaleIndexing:
     async def test_large_scale_indexing(self, temp_indexer_facade):
         """Test indexing and searching with larger number of tools."""
         # Generate many tools
+        NUM_CATEGORIES = 5
         tools = []
         for i in range(50):
-            server_name = f"server-{i % 5}"  # 5 different servers
+            server_name = f"server-{i % NUM_CATEGORIES}"  # 5 different servers
             category = ["compute", "storage", "network", "monitoring", "security"][
-                i % 5
+                i % NUM_CATEGORIES
             ]
-            action = ["create", "delete", "list", "update", "monitor"][i % 5]
+            action = ["create", "delete", "list", "update", "monitor"][i % NUM_CATEGORIES]
 
             tools.append(
                 {
@@ -44,8 +45,9 @@ class TestLargeScaleIndexing:
             await temp_indexer_facade.index_tool(tool_data)
 
         # Verify all tools are indexed
+        TOTAL_TOOLS_COUNT = 50
         all_tools = await temp_indexer_facade.persistence.get_all_tools()
-        assert len(all_tools) == 50
+        assert len(all_tools) == TOTAL_TOOLS_COUNT
 
         # Test category-specific searches
         search_tests = [

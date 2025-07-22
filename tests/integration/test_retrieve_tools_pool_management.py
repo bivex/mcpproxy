@@ -25,7 +25,8 @@ class TestToolPoolManagement:
             MockConfigLoader.return_value.load_config.return_value = mock_config
 
             server = SmartMCPProxyServer()
-            server.tools_limit = 3  # Small limit for testing
+            TEST_TOOLS_LIMIT = 3
+            server.tools_limit = TEST_TOOLS_LIMIT  # Small limit for testing
 
             # Mock FastMCP
             server.mcp = MagicMock()
@@ -76,6 +77,11 @@ class TestToolPoolManagement:
 
         # Set up existing tools in pool (at limit)
         current_time = time.time()
+        LOW_SCORE = 0.3
+        HIGH_SCORE = 0.8
+        MEDIUM_SCORE = 0.6
+        OLD_TOOL_TIMESTAMP_DIFFERENCE = 1800
+        MEDIUM_AGE_TOOL_TIMESTAMP_DIFFERENCE = 900
         server.current_tool_registrations = {
             "server1_old_tool1": MagicMock(),
             "server1_old_tool2": MagicMock(),
@@ -83,16 +89,16 @@ class TestToolPoolManagement:
         }
         server.tool_pool_metadata = {
             "server1_old_tool1": {
-                "timestamp": current_time - 1800,
-                "score": 0.3,
+                "timestamp": current_time - OLD_TOOL_TIMESTAMP_DIFFERENCE,
+                "score": LOW_SCORE,
             },  # Old, low score
             "server1_old_tool2": {
-                "timestamp": current_time - 900,
-                "score": 0.8,
+                "timestamp": current_time - MEDIUM_AGE_TOOL_TIMESTAMP_DIFFERENCE,
+                "score": HIGH_SCORE,
             },  # Medium age, high score
             "server2_old_tool3": {
                 "timestamp": current_time,
-                "score": 0.6,
+                "score": MEDIUM_SCORE,
             },  # Fresh, medium score
         }
 
@@ -128,16 +134,18 @@ class TestToolPoolManagement:
         assert "pool_limit" in result
 
         # Should register 2 new tools
-        assert len(result["newly_registered"]) == 2
+        EXPECTED_NEWLY_REGISTERED_COUNT = 2
+        assert len(result["newly_registered"]) == EXPECTED_NEWLY_REGISTERED_COUNT
         assert "server1_new_tool1" in result["newly_registered"]
         assert "server2_new_tool2" in result["newly_registered"]
 
         # Should evict 2 tools to stay within limit (3 existing + 2 new - 3 limit = 2 evictions)
-        assert len(result["evicted_tools"]) == 2
+        EXPECTED_EVICTED_TOOLS_COUNT = 2
+        assert len(result["evicted_tools"]) == EXPECTED_EVICTED_TOOLS_COUNT
 
         # Pool size should be at limit
         assert result["pool_size"] <= result["pool_limit"]
-        assert result["pool_limit"] == 3
+        assert result["pool_limit"] == TEST_TOOLS_LIMIT
 
         # Verify _register_proxy_tool was called for new tools
         assert server.tool_pool_manager._register_proxy_tool.call_count == 2
@@ -153,18 +161,19 @@ class TestToolPoolManagement:
         server = mock_server_with_indexer
 
         # Set up existing tool in mock ToolPoolManager
-        original_time = time.time() - 1000
+        INITIAL_TIMESTAMP_DIFFERENCE = 1000
+        original_time = time.time() - INITIAL_TIMESTAMP_DIFFERENCE
         tool_name = "server1_existing_tool"
         
         # Configure the mock ToolPoolManager's internal state
         server.tool_pool_manager.current_tool_registrations = {tool_name: MagicMock()}
         server.tool_pool_manager.tool_pool_metadata = {
-            tool_name: {"timestamp": original_time, "score": 0.6, "original_score": 0.6}
+            tool_name: {"timestamp": original_time, "score": MEDIUM_SCORE, "original_score": MEDIUM_SCORE}
         }
 
         # Mock search results - same tool with higher score
         search_results = [
-            self.create_mock_search_result("existing_tool", "server1", 0.8)
+            self.create_mock_search_result("existing_tool", "server1", HIGH_SCORE)
         ]
         server.indexer.search_tools = AsyncMock(return_value=search_results)
 
@@ -178,7 +187,7 @@ class TestToolPoolManagement:
                 server.tool_pool_manager.tool_pool_metadata[tool_name]["timestamp"] = time.time()
                 server.tool_pool_manager.tool_pool_metadata[tool_name]["score"] = max(
                     server.tool_pool_manager.tool_pool_metadata[tool_name]["score"],
-                    0.8 # New score
+                    HIGH_SCORE # New score
                 )
             
             # Simulate the JSON response that retrieve_tools would return
@@ -190,7 +199,7 @@ class TestToolPoolManagement:
                         "original_name": "existing_tool",
                         "server": "server1",
                         "description": "Description for existing_tool",
-                        "score": 0.8,
+                        "score": HIGH_SCORE,
                         "newly_registered": False,
                     }
                 ],
@@ -214,9 +223,9 @@ class TestToolPoolManagement:
 
         # Verify freshness update by checking the mocked ToolPoolManager's internal state
         metadata = server.tool_pool_manager.tool_pool_metadata[tool_name]
-        assert metadata["score"] == 0.8  # Should be updated to higher score
+        assert metadata["score"] == HIGH_SCORE  # Should be updated to higher score
         assert metadata["timestamp"] > original_time  # Should be fresher
-        assert metadata["original_score"] == 0.6  # Should preserve original
+        assert metadata["original_score"] == MEDIUM_SCORE  # Should preserve original
 
     @pytest.mark.asyncio
     async def test_no_eviction_under_limit(
@@ -229,9 +238,10 @@ class TestToolPoolManagement:
 
         # Set up pool with only 1 tool (under limit of 3) in mock ToolPoolManager
         tool_name = "server1_tool1"
+        INITIAL_SCORE = 0.5
         manager.current_tool_registrations = {tool_name: MagicMock()}
         manager.tool_pool_metadata = {
-            tool_name: {"timestamp": time.time(), "score": 0.5}
+            tool_name: {"timestamp": time.time(), "score": INITIAL_SCORE}
         }
         manager.get_proxified_tools.return_value = {tool_name: MagicMock()}
 

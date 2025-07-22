@@ -6,10 +6,11 @@ from pathlib import Path
 
 import numpy as np  # type: ignore[import-untyped]
 
-from ..models.schemas import EmbedderType, SearchResult, ToolMetadata
-from .db import DatabaseManager
-from .bm25_store import BM25Store
-from .faiss_store import FaissStore
+from mcpproxy.models.schemas import ToolMetadata, SearchResult, EmbedderType
+from mcpproxy.persistence.bm25_store import BM25Store
+from mcpproxy.persistence.db import DatabaseManager
+from mcpproxy.persistence.faiss_store import FaissStore
+from mcpproxy.models.constants import DEFAULT_VECTOR_DIMENSION
 
 FACADE_TOP_K = 5  # Default number of top results for facade search
 
@@ -87,7 +88,7 @@ class PersistenceFacade:
         self,
         db_path: str | None = None,
         index_path: str | None = None,
-        vector_dimension: int = 384,
+        vector_dimension: int = DEFAULT_VECTOR_DIMENSION,
         embedder_type: EmbedderType = EmbedderType.BM25,
     ):
         self.db_path = db_path

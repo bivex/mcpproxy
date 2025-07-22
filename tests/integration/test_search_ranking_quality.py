@@ -37,7 +37,8 @@ class TestSearchRankingQuality:
         # Search for "create virtual machine"
         results = await temp_indexer_facade.search_tools("create virtual machine", k=5)
 
-        assert len(results) >= 3
+        MIN_EXPECTED_RESULTS = 3
+        assert len(results) >= MIN_EXPECTED_RESULTS
 
         # Verify ranking: perfect_match should be first, no_match should be last
         result_names = [r.tool.name for r in results]

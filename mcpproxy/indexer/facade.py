@@ -1,13 +1,20 @@
 """Indexer and search facade."""
 
+import os
 from typing import Any
+import json
+import math
 
 from mcpproxy.models.schemas import ToolMetadata, SearchResult, ToolData, EmbedderType
-from ..persistence.facade import PersistenceFacade
-from ..utils.dependency_management.dependencies import check_embedder_dependencies
-from ..utils.hashing.hashing import compute_tool_hash
-from .embedders.base import BaseEmbedder
-from .embedders.bm25 import BM25Embedder
+from mcpproxy.persistence.facade import PersistenceFacade
+from mcpproxy.utils.dependency_management.dependencies import check_embedder_dependencies
+from mcpproxy.utils.hashing.hashing import compute_tool_hash
+from mcpproxy.utils.name_sanitization.name_sanitizer import sanitize_tool_name
+from mcpproxy.indexer.embedders.base import BaseEmbedder
+from mcpproxy.indexer.embedders.bm25 import BM25Embedder
+from mcpproxy.indexer.embedders.openai import OpenAIEmbedder
+from mcpproxy.indexer.embedders.huggingface import HuggingFaceEmbedder
+from mcpproxy.models.constants import DEFAULT_SEARCH_RESULT_LIMIT, MIN_NORMALIZED_SCORE_THRESHOLD
 
 
 class IndexerFacade:
@@ -22,31 +29,19 @@ class IndexerFacade:
     ):
         self.persistence = persistence
         self.embedder_type = embedder_type
-        self.index_dir = index_dir
         self.embedder = self._create_embedder(embedder_type, hf_model, index_dir)
-        self._needs_reindex = False
+        self._needs_reindex = False  # Flag to indicate if re-indexing is needed
 
     def _create_embedder(
         self, embedder_type: EmbedderType, hf_model: str | None, index_dir: str | None
     ) -> BaseEmbedder:
-        """Create embedder based on type."""
-        # Check dependencies before creating embedder
-        check_embedder_dependencies(embedder_type.value)
-
+        check_embedder_dependencies(embedder_type)
         if embedder_type == EmbedderType.BM25:
-            embedder = BM25Embedder(index_dir)
-            # Try to load existing index
-            if hasattr(embedder, "load_index"):
-                embedder.load_index()
-            return embedder
+            return BM25Embedder(index_dir=index_dir)
         elif embedder_type == EmbedderType.HF:
-            from .embedders.huggingface import HuggingFaceEmbedder
-
             model_name = hf_model or "sentence-transformers/all-MiniLM-L6-v2"
             return HuggingFaceEmbedder(model_name)
         elif embedder_type == EmbedderType.OPENAI:
-            from .embedders.openai import OpenAIEmbedder
-
             return OpenAIEmbedder()
         else:
             raise ValueError(f"Unknown embedder type: {embedder_type}")
@@ -54,149 +49,97 @@ class IndexerFacade:
     async def index_tool(
         self, tool_data: ToolData
     ) -> None:
-        """Index a tool with its metadata using Tool class fields."""
-        # Include tags and annotations in hash computation
-        extended_params = {
-            "parameters": tool_data.params or {},
-            "tags": tool_data.tags or [],
-            "annotations": tool_data.annotations,
-        }
-        tool_hash = compute_tool_hash(tool_data.name, tool_data.description, extended_params)
+        """
+        Indexes a single tool.
 
-        if await self._is_tool_unchanged(tool_hash):
-            return  # Tool unchanged, no need to re-index
+        If the tool already exists and has not changed, it skips re-indexing.
+        Otherwise, it processes and stores the tool.
+        """
+        server_name = tool_data.server_name
+        # Generate a hash for the current tool data to detect changes
+        tool_hash = compute_tool_hash(tool_data)
 
-        # Create enhanced text for embedding (include tags)
-        enhanced_text = self.embedder.combine_tool_text(tool_data.name, tool_data.description, tool_data.params)
-        if tool_data.tags:
-            enhanced_text += f" | Tags: {', '.join(tool_data.tags)}"
-
-        # For BM25, we handle indexing differently
-        if isinstance(self.embedder, BM25Embedder):
-            # Add to corpus for later batch indexing
-            vector = await self.embedder.embed_text(enhanced_text)
-            self._needs_reindex = True
-        else:
-            # For vector embedders, create embedding immediately
-            vector = await self.embedder.embed_text(enhanced_text)
-
-        # Store in persistence layer with extended metadata
-        tool = self._create_tool_metadata(tool_data, tool_hash, extended_params)
-
-        await self.persistence.store_tool_with_vector(tool, vector)
-
-    async def index_tool_from_object(self, tool_obj: Any, server_name: str) -> None:
-        """Index a tool from a Tool object, using hash-based change detection."""
-        from fastmcp.tools.tool import Tool
-
-        if not isinstance(tool_obj, Tool):
-            raise ValueError(f"Expected Tool object, got {type(tool_obj)}")
-
-        tool_data = self._extract_tool_data_from_obj(tool_obj, server_name)
-        tool_hash = compute_tool_hash(
-            tool_data.name, tool_data.description or "", tool_data.to_dict()
-        )
-
+        # Check if the tool exists and is unchanged
         if await self._is_tool_unchanged(tool_hash):
             return
 
+        # Process and store the tool
         await self._process_and_store_tool(tool_data, tool_hash, server_name)
 
+    async def index_tool_from_object(self, tool_obj: Any, server_name: str) -> None:
+        """
+        Extracts tool data from a tool object and indexes it.
+        This method is used when new tools are discovered or updated.
+        """
+        tool_data = self._extract_tool_data_from_obj(tool_obj, server_name)
+        await self.index_tool(tool_data)
+
     async def _is_tool_unchanged(self, tool_hash: str) -> bool:
-        """Checks if a tool with the given hash already exists."""
-        existing_tool = await self.persistence.get_tool_by_hash(tool_hash)
-        return bool(existing_tool)
+        """Check if the tool exists and its hash is unchanged in the database."""
+        return await self.persistence.get_tool_by_hash(tool_hash) is not None
 
     async def _process_and_store_tool(
         self, tool_data: ToolData, tool_hash: str, server_name: str
     ) -> None:
-        """Processes tool data, creates embedding, and stores it."""
-        # Create enhanced text for embedding (include tags)
-        enhanced_text = self.embedder.combine_tool_text(
-            tool_data.name, tool_data.description or "", tool_data.params
-        )
-        if tool_data.tags:
-            enhanced_text += f" | Tags: {', '.join(tool_data.tags)}"
+        """Processes tool data, stores it, and updates the index."""
+        # Sanitize tool name for consistent indexing and searching
+        tool_data.name = sanitize_tool_name(tool_data.name)
 
-        # For BM25, we handle indexing differently
+        # Index the tool content
+        tool_content_to_index = f"{tool_data.name} {tool_data.description} {tool_data.args}"
         if isinstance(self.embedder, BM25Embedder):
-            # Add to corpus for later batch indexing
-            vector = await self.embedder.embed_text(enhanced_text)
-            self._needs_reindex = True
+            await self.embedder.add_texts_to_corpus(
+                [tool_content_to_index], [tool_data.id]
+            )
         else:
-            # For vector embedders, create embedding immediately
-            vector = await self.embedder.embed_text(enhanced_text)
+            vector = await self.embedder.embed_text(tool_content_to_index)
+            tool_data.embedding = vector.tolist()  # Store as list for JSON serialization
 
         # Store minimal metadata in persistence layer (only for hash-based change detection)
-        import json
-
         tool = ToolMetadata(
             name=tool_data.name,
-            description=tool_data.description or "",
+            description=tool_data.description,
+            args=self._serialize_params_to_json(tool_data.args),
             hash=tool_hash,
+            id=tool_data.id,
             server_name=server_name,
-            params_json=self._serialize_params_to_json(tool_data.params),
+            last_used_at=tool_data.last_used_at,
+            embedding=tool_data.embedding,
         )
-
-        await self.persistence.store_tool_with_vector(tool, vector)
+        await self.persistence.upsert_tool(tool)
+        self._needs_reindex = True  # Mark for re-indexing for BM25 after updates
 
     def _serialize_params_to_json(self, params: dict[str, Any] | None) -> str | None:
-        import json
-        return json.dumps(params) if params else None
+        return json.dumps(params) if params is not None else None
 
     def _extract_tool_data_from_obj(self, tool_obj: Any, server_name: str) -> ToolData:
+        # Placeholder for extracting ToolData from a tool object.
+        # This will depend on the actual structure of tool_obj.
         return ToolData(
+            id=tool_obj.id,
             name=tool_obj.name,
-            description=tool_obj.description or "",
+            description=tool_obj.description,
+            args=tool_obj.args,
             server_name=server_name,
-            params=tool_obj.parameters,
-            tags=list(tool_obj.tags) if tool_obj.tags else [],
-            annotations=self._get_annotations_string(tool_obj.annotations),
+            last_used_at=tool_obj.last_used_at,
         )
 
     def _get_annotations_string(self, annotations: Any) -> str | None:
+        # Placeholder for extracting annotations as a string.
         return str(annotations) if annotations else None
 
     async def reindex_all_tools(self) -> None:
-        """Rebuild the entire index with all stored tools (BM25 specific)."""
-        if not isinstance(self.embedder, BM25Embedder):
-            return  # Only applicable for BM25
-
-        # Get all tools from persistence
+        """Reindex all tools in the system. This is a costly operation."""
+        self.embedder.clear_index()
         all_tools = await self.persistence.get_all_tools()
-        if not all_tools:
-            return
-
-        # Create text representations for all tools
-        texts = []
-        for tool in all_tools:
-            import json
-
-            try:
-                extended_params = (
-                    json.loads(tool.params_json) if tool.params_json else {}
-                )
-            except (json.JSONDecodeError, TypeError):
-                extended_params = {}
-
-            params = (
-                extended_params.get("parameters", {})
-                if isinstance(extended_params, dict)
-                else None
-            )
-            tags = (
-                extended_params.get("tags", [])
-                if isinstance(extended_params, dict)
-                else []
-            )
-
-            text = self.embedder.combine_tool_text(tool.name, tool.description, params)
-            if tags:
-                text += f" | Tags: {', '.join(tags)}"
-            texts.append(text)
-
-        # Rebuild BM25 index with all tools
-        await self.embedder.fit_corpus(texts)
+        if isinstance(self.embedder, BM25Embedder):
+            corpus = [
+                f"{tool.name} {tool.description} {tool.args}" for tool in all_tools
+            ]
+            ids = [tool.id for tool in all_tools]
+            await self.embedder.add_texts_to_corpus(corpus, ids)
+        # For vector embedders, embeddings are stored directly with the tool metadata,
+        # so no separate re-indexing of the embedder is needed.
         self._needs_reindex = False
 
     async def reset_embedder_data(self) -> None:
@@ -212,7 +155,7 @@ class IndexerFacade:
             if self._needs_reindex or not self.embedder.is_indexed():
                 await self.reindex_all_tools()
 
-    async def search_tools(self, query: str, k: int = 5) -> list[SearchResult]:
+    async def search_tools(self, query: str, k: int = DEFAULT_SEARCH_RESULT_LIMIT) -> list[SearchResult]:
         """Search for tools using the configured embedder."""
         # Ensure index is ready for BM25
         await self.ensure_index_ready()
@@ -247,13 +190,11 @@ class IndexerFacade:
 
         # Use modified sigmoid normalization to map scores to [0,1] range
         # Handle zero scores (nonsense queries) specially
-        import math
-
         normalized_scores = []
         for score in scores:
             if score <= 0.0:
                 # Map zero/negative scores to very low values (< 0.5)
-                normalized_score = 0.1
+                normalized_score = MIN_NORMALIZED_SCORE_THRESHOLD
             else:
                 # Apply sigmoid function: 1 / (1 + exp(-score))
                 # This maps positive scores to (0.5, 1) range

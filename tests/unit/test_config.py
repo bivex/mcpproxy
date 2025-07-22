@@ -11,6 +11,7 @@ import pytest
 from mcpproxy.models.schemas import EmbedderType, ProxyConfig, ServerConfig
 from mcpproxy.server.config.config import ConfigLoader
 from mcpproxy.server.config.config_file_handler import ConfigFileHandler
+from mcpproxy.models.constants import DEFAULT_TOOL_NAME_LIMIT, DEFAULT_TOOLS_LIMIT, DEFAULT_SEARCH_RESULT_LIMIT
 
 
 class TestConfigLoader:
@@ -40,10 +41,10 @@ class TestConfigLoader:
                 loader = ConfigLoader(config_file)
                 config = loader.load_config()
                 
-                assert config.tool_name_limit == 60  # Default value
+                assert config.tool_name_limit == DEFAULT_TOOL_NAME_LIMIT  # Default value
                 assert config.embedder == EmbedderType.BM25  # Default embedder
-                assert config.top_k == 5  # Default top_k
-                assert config.tools_limit == 15 # Default tools_limit
+                assert config.top_k == DEFAULT_SEARCH_RESULT_LIMIT  # Default top_k
+                assert config.tools_limit == DEFAULT_TOOLS_LIMIT # Default tools_limit
         finally:
             os.unlink(config_file)
 
@@ -60,11 +61,12 @@ class TestConfigLoader:
         config_file = self.create_sample_config_file(config_data)
         
         try:
-            with patch.dict(os.environ, {"MCPPROXY_TOOL_NAME_LIMIT": "40"}, clear=True):
+            CUSTOM_TOOL_NAME_LIMIT = 40
+            with patch.dict(os.environ, {"MCPPROXY_TOOL_NAME_LIMIT": str(CUSTOM_TOOL_NAME_LIMIT)}, clear=True):
                 loader = ConfigLoader(config_file)
                 config = loader.load_config()
                 
-                assert config.tool_name_limit == 40
+                assert config.tool_name_limit == CUSTOM_TOOL_NAME_LIMIT
         finally:
             os.unlink(config_file)
 
@@ -91,15 +93,21 @@ class TestConfigLoader:
                 "MCPPROXY_TOP_K": "10",
                 "MCPPROXY_TOOL_NAME_LIMIT": "80"
             }
-            
-            with patch.dict(os.environ, env_vars, clear=True):
+            CUSTOM_TOP_K = 10
+            CUSTOM_TOOL_NAME_LIMIT_ENV = 80
+            with patch.dict(os.environ, {
+                "MCPPROXY_EMBEDDER": "HF",
+                "MCPPROXY_HF_MODEL": "custom-model",
+                "MCPPROXY_TOP_K": str(CUSTOM_TOP_K),
+                "MCPPROXY_TOOL_NAME_LIMIT": str(CUSTOM_TOOL_NAME_LIMIT_ENV)
+            }, clear=True):
                 loader = ConfigLoader(config_file)
                 config = loader.load_config()
                 
                 assert config.embedder == EmbedderType.HF
                 assert config.hf_model == "custom-model"
-                assert config.top_k == 10
-                assert config.tool_name_limit == 80
+                assert config.top_k == CUSTOM_TOP_K
+                assert config.tool_name_limit == CUSTOM_TOOL_NAME_LIMIT_ENV
                 assert len(config.mcp_servers) == 2
         finally:
             os.unlink(config_file)
@@ -179,9 +187,9 @@ class TestConfigLoader:
         assert isinstance(config, ProxyConfig)
         assert config.mcp_servers == {}
         assert config.embedder == EmbedderType.BM25
-        assert config.top_k == 5
-        assert config.tool_name_limit == 60
-        assert config.tools_limit == 15 # Ensure tools_limit is also default
+        assert config.top_k == DEFAULT_SEARCH_RESULT_LIMIT
+        assert config.tool_name_limit == DEFAULT_TOOL_NAME_LIMIT
+        assert config.tools_limit == DEFAULT_TOOLS_LIMIT # Ensure tools_limit is also default
 
     def test_config_includes_tool_name_limit_docs(self, tmp_path):
         """Test that create_sample_config includes tool_name_limit documentation."""
@@ -191,8 +199,8 @@ class TestConfigLoader:
 
         with open(config_path) as f:
             content = json.load(f)
-            assert content["tool_name_limit"] == 60
-            assert content["tools_limit"] == 15
+            assert content["tool_name_limit"] == DEFAULT_TOOL_NAME_LIMIT
+            assert content["tools_limit"] == DEFAULT_TOOLS_LIMIT
 
     def test_proxy_config_defaults(self):
         """Test that ProxyConfig model has correct default values."""
@@ -200,8 +208,8 @@ class TestConfigLoader:
         
         assert config.embedder == EmbedderType.BM25
         assert config.hf_model is None
-        assert config.top_k == 5
-        assert config.tool_name_limit == 60
+        assert config.top_k == DEFAULT_SEARCH_RESULT_LIMIT
+        assert config.tool_name_limit == DEFAULT_TOOL_NAME_LIMIT
 
     def test_config_custom_values(self):
         """Test ProxyConfig model with custom values."""

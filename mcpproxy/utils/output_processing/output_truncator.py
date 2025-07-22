@@ -1,3 +1,5 @@
+from mcpproxy.models.constants import DEFAULT_TRUNCATION_LAST_CHARS
+
 def truncate_output(output: str, truncate_len: int | None) -> str:
     """Truncate output if it exceeds the configured length limit.
 
@@ -12,7 +14,7 @@ def truncate_output(output: str, truncate_len: int | None) -> str:
         return output
 
     # Calculate how many chars to show at start and end
-    last_chars = 50
+    last_chars = DEFAULT_TRUNCATION_LAST_CHARS
     first_chars = (
         truncate_len
         - last_chars

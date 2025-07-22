@@ -6,6 +6,7 @@ import sys
 import numpy as np
 
 from .base import BaseEmbedder
+from mcpproxy.models.constants import OPENAI_EMBEDDING_DIMENSION
 
 
 class OpenAIEmbedder(BaseEmbedder):
@@ -31,7 +32,7 @@ class OpenAIEmbedder(BaseEmbedder):
         self.model = model
         self.client = openai.AsyncOpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
         # text-embedding-ada-002 has 1536 dimensions
-        self.dimension = 1536 if model == "text-embedding-ada-002" else 1536
+        self.dimension = OPENAI_EMBEDDING_DIMENSION if model == "text-embedding-ada-002" else OPENAI_EMBEDDING_DIMENSION
 
     async def embed_text(self, text: str) -> np.ndarray:
         """Embed single text using OpenAI API."""

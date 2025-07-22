@@ -98,10 +98,12 @@ def sample_embeddings() -> list[np.ndarray]:
     ]
 
 
+SAMPLE_TOOL_PARAM_VALUE = 123
+
 @pytest.fixture
 def sample_tool_params() -> dict:
     """Sample tool parameters for testing."""
-    return {"name": "test_name", "value": 123}
+    return {"name": "test_name", "value": SAMPLE_TOOL_PARAM_VALUE}
 
 
 @pytest.fixture

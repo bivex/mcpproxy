@@ -1,10 +1,11 @@
 import re
 import os
 from mcpproxy.logging import get_logger
+from mcpproxy.models.constants import DEFAULT_TOOL_NAME_LIMIT, MIN_TRUNCATED_TOOL_NAME_LENGTH
 
 logger = get_logger()
 
-def sanitize_tool_name(server_name: str, tool_name: str, tool_name_limit: int = 60) -> str:
+def sanitize_tool_name(server_name: str, tool_name: str, tool_name_limit: int = DEFAULT_TOOL_NAME_LIMIT) -> str:
     """Sanitize tool name to comply with Google Gemini API requirements."""
 
     combined = _clean_and_combine_names(server_name, tool_name)
@@ -62,7 +63,7 @@ def _truncate_name(name: str, max_length: int) -> str:
 
             # Reserve space for server part + underscore
             available_space = max_length - len(server_part) - 1
-            if available_space > 3:  # Keep at least 3 chars of tool name
+            if available_space > MIN_TRUNCATED_TOOL_NAME_LENGTH:  # Keep at least 3 chars of tool name
                 truncated = f"{server_part}_{tool_part[:available_space]}"
             else:
                 # Not enough space for meaningful server prefix

@@ -30,6 +30,7 @@ from ..utils.output_processing.output_truncator import truncate_output
 from .config.config import ConfigLoader
 from .tool_pool_manager import ToolPoolManager
 from .server_discovery_manager import ServerDiscoveryManager
+from mcpproxy.models.constants import DEFAULT_TOOL_NAME_LIMIT, DEFAULT_TOOLS_LIMIT
 
 logger = get_logger()
 
@@ -103,13 +104,13 @@ class SmartMCPProxyServer:
         elif hasattr(self.config, "tool_name_limit") and self.config.tool_name_limit:
             self.tool_name_limit = self.config.tool_name_limit
         else:
-            self.tool_name_limit = 60  # Default value
+            self.tool_name_limit = DEFAULT_TOOL_NAME_LIMIT  # Default value
 
         # Set tools_limit based on config or env
         if self.config.tools_limit is not None:
             self.tools_limit = self.config.tools_limit
         else:
-            self.tools_limit = 15  # Default value
+            self.tools_limit = DEFAULT_TOOLS_LIMIT  # Default value
 
     def _get_instructions(self) -> str:
         if self.routing_type == "CALL_TOOL":
@@ -232,7 +233,7 @@ class SmartMCPProxyServer:
 
     async def _init_persistence(self, reset_data: bool) -> None:
         logger = get_logger()
-        vector_dimension = 1 if self.config.embedder == EmbedderType.BM25 else 384
+        vector_dimension = 1 if self.config.embedder == EmbedderType.BM25 else DEFAULT_VECTOR_DIMENSION
 
         logger.debug(f"Initializing persistence with dimension: {vector_dimension}")
         self.persistence = PersistenceFacade(
@@ -259,7 +260,7 @@ class SmartMCPProxyServer:
         logger = get_logger()
         if self.config.embedder != EmbedderType.BM25:
             actual_dimension = self.indexer.embedder.get_dimension()
-            vector_dimension = 1 if self.config.embedder == EmbedderType.BM25 else 384 # Default dimension used during initial persistence setup
+            vector_dimension = 1 if self.config.embedder == EmbedderType.BM25 else DEFAULT_VECTOR_DIMENSION # Default dimension used during initial persistence setup
             if actual_dimension != vector_dimension:
                 logger.info(
                     f"Updating vector dimension from {vector_dimension} to {actual_dimension}"

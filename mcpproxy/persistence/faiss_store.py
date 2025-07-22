@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import numpy as np  # type: ignore[import-untyped]
+from mcpproxy.models.constants import DEFAULT_VECTOR_DIMENSION
 
 FAISS_TOP_K = 5  # Default number of top results for FAISS search
 
@@ -11,7 +12,7 @@ FAISS_TOP_K = 5  # Default number of top results for FAISS search
 class FaissStore:
     """Faiss vector store for tool embeddings."""
 
-    def __init__(self, index_path: str = "tools.faiss", dimension: int = 384, initial_next_id: int | None = None):
+    def __init__(self, index_path: str = "tools.faiss", dimension: int = DEFAULT_VECTOR_DIMENSION, initial_next_id: int | None = None):
         self.index_path = Path(index_path)
         self.dimension = dimension
         self.index = None
