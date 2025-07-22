@@ -85,82 +85,13 @@ class TestRetrieveToolsPoolManagement:
         ]
         server.indexer.search_tools = AsyncMock(return_value=search_results)
 
-        # Mock _register_proxy_tool to track calls
+        # Mock _register_proxy_tool and _enforce_tool_pool_limit, as they are internal now.
+        # The retrieve_tools method will call them.
         server._register_proxy_tool = AsyncMock()
-
-        # Create a simplified retrieve_tools function for testing
-        async def retrieve_tools_func(query: str) -> str:
-            # Simulate the retrieve_tools logic
-            if not server.indexer:
-                return json.dumps({"error": "Indexer not initialized"})
-
-            results = await server.indexer.search_tools(query, 5)
-
-            if not results:
-                return json.dumps({"message": "No relevant tools found", "tools": []})
-
-            # Prepare tools for registration
-            tools_to_register = []
-            for result in results:
-                tool_name = f"{result.tool.server_name}_{result.tool.name}"
-
-                # Skip if already registered
-                if tool_name in server.current_tool_registrations:
-                    # Update timestamp for existing tool (freshen it)
-                    if tool_name in server.tool_pool_metadata:
-                        server.tool_pool_metadata[tool_name]["timestamp"] = time.time()
-                        server.tool_pool_metadata[tool_name]["score"] = max(
-                            server.tool_pool_metadata[tool_name]["score"], result.score
-                        )
-                    continue
-
-                tools_to_register.append((tool_name, result.tool, result.score))
-
-            # Enforce pool limit before registering new tools
-            evicted_tools = []
-            if tools_to_register:
-                new_tools_info = [(name, score) for name, _, score in tools_to_register]
-                evicted_tools = await server._enforce_tool_pool_limit(new_tools_info)
-
-            # Register new tools
-            newly_registered = []
-            for tool_name, tool_metadata, score in tools_to_register:
-                await server._register_proxy_tool(tool_metadata, tool_name, score)
-                newly_registered.append(tool_name)
-
-            # Prepare tool information
-            registered_tools = []
-            for result in results:
-                tool_name = f"{result.tool.server_name}_{result.tool.name}"
-                registered_tools.append(
-                    {
-                        "name": tool_name,
-                        "original_name": result.tool.name,
-                        "server": result.tool.server_name,
-                        "description": result.tool.description,
-                        "score": result.score,
-                        "newly_registered": tool_name in newly_registered,
-                    }
-                )
-
-            message = f"Found {len(registered_tools)} tools, registered {len(newly_registered)} new tools"
-            if evicted_tools:
-                message += f", evicted {len(evicted_tools)} tools to stay within limit ({server.tools_limit})"
-
-            return json.dumps(
-                {
-                    "message": message,
-                    "tools": registered_tools,
-                    "newly_registered": newly_registered,
-                    "evicted_tools": evicted_tools,
-                    "pool_size": len(server.current_tool_registrations),
-                    "pool_limit": server.tools_limit,
-                    "query": query,
-                }
-            )
+        server._enforce_tool_pool_limit = AsyncMock(return_value=["server1_old_tool1", "server2_old_tool3"])
 
         # Call retrieve_tools
-        result_json = await retrieve_tools_func("search for new tools")
+        result_json = await server.mcp.retrieve_tools("search for new tools")
         result = json.loads(result_json)
 
         # Verify results
@@ -185,6 +116,9 @@ class TestRetrieveToolsPoolManagement:
         # Verify _register_proxy_tool was called for new tools
         assert server._register_proxy_tool.call_count == 2
 
+        # Verify _enforce_tool_pool_limit was called
+        server._enforce_tool_pool_limit.assert_called_once()
+
     @pytest.mark.asyncio
     async def test_retrieve_tools_freshness_update_existing_tools(
         self, mock_server_with_indexer
@@ -206,78 +140,8 @@ class TestRetrieveToolsPoolManagement:
         ]
         server.indexer.search_tools = AsyncMock(return_value=search_results)
 
-        # Create retrieve_tools function for testing
-        async def retrieve_tools_func(query: str) -> str:
-            if not server.indexer:
-                return json.dumps({"error": "Indexer not initialized"})
-
-            results = await server.indexer.search_tools(query, 5)
-
-            if not results:
-                return json.dumps({"message": "No relevant tools found", "tools": []})
-
-            # Prepare tools for registration
-            tools_to_register = []
-            for result in results:
-                tool_name = f"{result.tool.server_name}_{result.tool.name}"
-
-                # Skip if already registered
-                if tool_name in server.current_tool_registrations:
-                    # Update timestamp for existing tool (freshen it)
-                    if tool_name in server.tool_pool_metadata:
-                        server.tool_pool_metadata[tool_name]["timestamp"] = time.time()
-                        server.tool_pool_metadata[tool_name]["score"] = max(
-                            server.tool_pool_metadata[tool_name]["score"], result.score
-                        )
-                    continue
-
-                tools_to_register.append((tool_name, result.tool, result.score))
-
-            # Enforce pool limit before registering new tools
-            evicted_tools = []
-            if tools_to_register:
-                new_tools_info = [(name, score) for name, _, score in tools_to_register]
-                evicted_tools = await server._enforce_tool_pool_limit(new_tools_info)
-
-            # Register new tools
-            newly_registered = []
-            for tool_name, tool_metadata, score in tools_to_register:
-                await server._register_proxy_tool(tool_metadata, tool_name, score)
-                newly_registered.append(tool_name)
-
-            # Prepare tool information
-            registered_tools = []
-            for result in results:
-                tool_name = f"{result.tool.server_name}_{result.tool.name}"
-                registered_tools.append(
-                    {
-                        "name": tool_name,
-                        "original_name": result.tool.name,
-                        "server": result.tool.server_name,
-                        "description": result.tool.description,
-                        "score": result.score,
-                        "newly_registered": tool_name in newly_registered,
-                    }
-                )
-
-            message = f"Found {len(registered_tools)} tools, registered {len(newly_registered)} new tools"
-            if evicted_tools:
-                message += f", evicted {len(evicted_tools)} tools to stay within limit ({server.tools_limit})"
-
-            return json.dumps(
-                {
-                    "message": message,
-                    "tools": registered_tools,
-                    "newly_registered": newly_registered,
-                    "evicted_tools": evicted_tools,
-                    "pool_size": len(server.current_tool_registrations),
-                    "pool_limit": server.tools_limit,
-                    "query": query,
-                }
-            )
-
         # Call retrieve_tools
-        result_json = await retrieve_tools_func("search for existing tool")
+        result_json = await server.mcp.retrieve_tools("search for existing tool")
         result = json.loads(result_json)
 
         # Verify no new registrations (tool already exists)
@@ -306,7 +170,7 @@ class TestRetrieveToolsPoolManagement:
         search_results = [self.create_mock_search_result("new_tool", "server1", 0.7)]
         server.indexer.search_tools = AsyncMock(return_value=search_results)
 
-        # Mock _register_proxy_tool to simulate actual registration
+        # Mock _register_proxy_tool and _enforce_tool_pool_limit
         async def mock_register(tool_metadata, tool_name, score):
             server.current_tool_registrations[tool_name] = MagicMock()
             server.tool_pool_metadata[tool_name] = {
@@ -314,87 +178,18 @@ class TestRetrieveToolsPoolManagement:
                 "score": score,
                 "original_score": score,
             }
-
         server._register_proxy_tool = AsyncMock(side_effect=mock_register)
-
-        # Create retrieve_tools function for testing
-        async def retrieve_tools_func(query: str) -> str:
-            if not server.indexer:
-                return json.dumps({"error": "Indexer not initialized"})
-
-            results = await server.indexer.search_tools(query, 5)
-
-            if not results:
-                return json.dumps({"message": "No relevant tools found", "tools": []})
-
-            # Prepare tools for registration
-            tools_to_register = []
-            for result in results:
-                tool_name = f"{result.tool.server_name}_{result.tool.name}"
-
-                # Skip if already registered
-                if tool_name in server.current_tool_registrations:
-                    # Update timestamp for existing tool (freshen it)
-                    if tool_name in server.tool_pool_metadata:
-                        server.tool_pool_metadata[tool_name]["timestamp"] = time.time()
-                        server.tool_pool_metadata[tool_name]["score"] = max(
-                            server.tool_pool_metadata[tool_name]["score"], result.score
-                        )
-                    continue
-
-                tools_to_register.append((tool_name, result.tool, result.score))
-
-            # Enforce pool limit before registering new tools
-            evicted_tools = []
-            if tools_to_register:
-                new_tools_info = [(name, score) for name, _, score in tools_to_register]
-                evicted_tools = await server._enforce_tool_pool_limit(new_tools_info)
-
-            # Register new tools
-            newly_registered = []
-            for tool_name, tool_metadata, score in tools_to_register:
-                await server._register_proxy_tool(tool_metadata, tool_name, score)
-                newly_registered.append(tool_name)
-
-            # Prepare tool information
-            registered_tools = []
-            for result in results:
-                tool_name = f"{result.tool.server_name}_{result.tool.name}"
-                registered_tools.append(
-                    {
-                        "name": tool_name,
-                        "original_name": result.tool.name,
-                        "server": result.tool.server_name,
-                        "description": result.tool.description,
-                        "score": result.score,
-                        "newly_registered": tool_name in newly_registered,
-                    }
-                )
-
-            message = f"Found {len(registered_tools)} tools, registered {len(newly_registered)} new tools"
-            if evicted_tools:
-                message += f", evicted {len(evicted_tools)} tools to stay within limit ({server.tools_limit})"
-
-            return json.dumps(
-                {
-                    "message": message,
-                    "tools": registered_tools,
-                    "newly_registered": newly_registered,
-                    "evicted_tools": evicted_tools,
-                    "pool_size": len(server.current_tool_registrations),
-                    "pool_limit": server.tools_limit,
-                    "query": query,
-                }
-            )
+        server._enforce_tool_pool_limit = AsyncMock(return_value=[])
 
         # Call retrieve_tools
-        result_json = await retrieve_tools_func("search for tools")
+        result_json = await server.mcp.retrieve_tools("search for tools")
         result = json.loads(result_json)
 
         # Verify no evictions
         assert len(result["evicted_tools"]) == 0
         assert len(result["newly_registered"]) == 1
         assert result["pool_size"] == 2  # 1 existing + 1 new
+        server._enforce_tool_pool_limit.assert_called_once() # Verify enforce was called
 
     @pytest.mark.asyncio
     async def test_retrieve_tools_error_handling(self, mock_server_with_indexer):
@@ -404,19 +199,8 @@ class TestRetrieveToolsPoolManagement:
         # Test with no indexer
         server.indexer = None
 
-        # Create retrieve_tools function for testing
-        async def retrieve_tools_func(query: str) -> str:
-            if not server.indexer:
-                return json.dumps({"error": "Indexer not initialized"})
-
-            results = await server.indexer.search_tools(query, 5)
-
-            if not results:
-                return json.dumps({"message": "No relevant tools found", "tools": []})
-
-            return json.dumps({"message": "Found tools", "tools": []})
-
-        result_json = await retrieve_tools_func("test query")
+        # Call retrieve_tools
+        result_json = await server.mcp.retrieve_tools("test query")
         result = json.loads(result_json)
 
         assert "error" in result
@@ -430,19 +214,8 @@ class TestRetrieveToolsPoolManagement:
         # Mock empty search results
         server.indexer.search_tools = AsyncMock(return_value=[])
 
-        # Create retrieve_tools function for testing
-        async def retrieve_tools_func(query: str) -> str:
-            if not server.indexer:
-                return json.dumps({"error": "Indexer not initialized"})
-
-            results = await server.indexer.search_tools(query, 5)
-
-            if not results:
-                return json.dumps({"message": "No relevant tools found", "tools": []})
-
-            return json.dumps({"message": "Found tools", "tools": []})
-
-        result_json = await retrieve_tools_func("no matching tools")
+        # Call retrieve_tools
+        result_json = await server.mcp.retrieve_tools("no matching tools")
         result = json.loads(result_json)
 
         assert result["message"] == "No relevant tools found"
@@ -464,58 +237,8 @@ class TestRetrieveToolsPoolManagement:
         ]
         server.indexer.search_tools = AsyncMock(return_value=search_results)
 
-        # Mock _register_proxy_tool to simulate actual registration
-        async def mock_register(tool_metadata, tool_name, score):
-            server.current_tool_registrations[tool_name] = MagicMock()
-            server.tool_pool_metadata[tool_name] = {
-                "timestamp": time.time(),
-                "score": score,
-                "original_score": score,
-            }
-
-        server._register_proxy_tool = AsyncMock(side_effect=mock_register)
-
-        # Create retrieve_tools function for testing
-        async def retrieve_tools_func(query: str) -> str:
-            if not server.indexer:
-                return json.dumps({"error": "Indexer not initialized"})
-
-            results = await server.indexer.search_tools(query, 5)
-
-            if not results:
-                return json.dumps({"message": "No relevant tools found", "tools": []})
-
-            # Prepare tools for registration
-            tools_to_register = []
-            for result in results:
-                tool_name = f"{result.tool.server_name}_{result.tool.name}"
-
-                # Skip if already registered
-                if tool_name in server.current_tool_registrations:
-                    continue
-
-                tools_to_register.append((tool_name, result.tool, result.score))
-
-            # Register new tools
-            newly_registered = []
-            for tool_name, tool_metadata, score in tools_to_register:
-                await server._register_proxy_tool(tool_metadata, tool_name, score)
-                newly_registered.append(tool_name)
-
-            return json.dumps(
-                {
-                    "message": f"Registered {len(newly_registered)} tools",
-                    "tools": [],
-                    "newly_registered": newly_registered,
-                    "evicted_tools": [],
-                    "pool_size": len(server.current_tool_registrations),
-                    "pool_limit": server.tools_limit,
-                    "query": query,
-                }
-            )
-
         # Call retrieve_tools
-        await retrieve_tools_func("test query")
+        await server.mcp.retrieve_tools("test query")
 
         # Verify consistency
         assert len(server.current_tool_registrations) == len(server.tool_pool_metadata)

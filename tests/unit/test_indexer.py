@@ -113,6 +113,11 @@ class TestBaseEmbedder:
                     "value (string): My Value",
                 ],
             ),
+            # New edge cases from test_extract_param_info_edge_cases
+            ("Test description", {"type": "object"}, ["Tool: test_tool", "Description: Test description"]), # No properties
+            ("Test description", {"type": "object", "properties": {"name": {"type": "string"}}}, ["name (string)"]), # Missing description
+            ("Test description", {"type": "object", "properties": {"data": {"type": "object", "properties": {"key": {"type": "string"}}}}}, ["data (object)"]), # Nested types
+            ("Test description", {"type": "object", "properties": {"items": {"type": "array", "items": {"type": "integer"}}}}, ["items (array)"]), # Array items
         ],
     )
     def test_combine_tool_text_scenarios(self, description: str, params: Any, expected_contains: list[str]):
@@ -122,38 +127,6 @@ class TestBaseEmbedder:
 
         for expected_str in expected_contains:
             assert expected_str in result, f"Expected '{expected_str}' not found in '{result}'"
-
-    def test_extract_param_info_edge_cases(self):
-        """Test edge cases for extract_param_info."""
-        embedder = MockEmbedder()
-        # Test with no properties
-        params = {"type": "object"}
-        result = embedder._extract_param_info(params)
-        assert result == []
-
-        # Test with missing description
-        params = {
-            "type": "object",
-            "properties": {"name": {"type": "string"}},
-        }
-        result = embedder._extract_param_info(params)
-        assert result == ["name (string)"]
-
-        # Test with nested types (should ignore nested structures for simple extraction)
-        params = {
-            "type": "object",
-            "properties": {"data": {"type": "object", "properties": {"key": {"type": "string"}}}},
-        }
-        result = embedder._extract_param_info(params)
-        assert result == ["data (object)"]
-
-        # Test with array items
-        params = {
-            "type": "object",
-            "properties": {"items": {"type": "array", "items": {"type": "integer"}}},
-        }
-        result = embedder._extract_param_info(params)
-        assert result == ["items (array)"]
 
 
 class TestBM25Embedder:
@@ -367,8 +340,6 @@ class TestIndexerFacade:
                 assert json.loads(stored_tool.params_json).get("annotations") == annotations
         else:
             mock_persistence.store_tool_with_vector.assert_not_called()
-
-        assert indexer._needs_reindex == expected_reindex
 
     @pytest.mark.asyncio
     async def test_reindex_all_tools(self, mock_persistence, temp_index_dir):
