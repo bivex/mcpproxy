@@ -10,7 +10,7 @@ from ..indexer.facade import IndexerFacade
 from ..logging import get_logger
 from ..models.schemas import EmbedderType, ToolMetadata
 from ..persistence.facade import PersistenceFacade
-from ..utils.name_sanitizer import sanitize_tool_name
+from ..utils.name_sanitization.name_sanitizer import sanitize_tool_name
 from .config.config import ConfigLoader, ProxyConfig # Import ConfigLoader and ProxyConfig
 from .tool_pool_manager import ToolPoolManager # Import ToolPoolManager
 

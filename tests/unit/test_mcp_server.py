@@ -5,7 +5,8 @@ from unittest.mock import Mock, patch
 
 from mcpproxy.models.schemas import ProxyConfig, ServerConfig, EmbedderType
 from mcpproxy.server.mcp_server import SmartMCPProxyServer
-from mcpproxy.utils.name_sanitizer import sanitize_tool_name # Import the function
+from mcpproxy.server.config.config import ConfigLoader
+from mcpproxy.utils.name_sanitization.name_sanitizer import sanitize_tool_name # Corrected path
 
 
 class TestSmartMCPProxyServer:

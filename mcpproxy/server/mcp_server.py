@@ -23,9 +23,9 @@ from ..models.schemas import (
     ToolRegistration,
 )
 from ..persistence.facade import PersistenceFacade
-from ..utils.name_sanitizer import sanitize_tool_name
-from ..utils.tool_weight_calculator import calculate_tool_weight
-from ..utils.output_truncator import truncate_output
+from ..utils.name_sanitization.name_sanitizer import sanitize_tool_name
+from ..utils.tool_scoring.tool_weight_calculator import calculate_tool_weight
+from ..utils.output_processing.output_truncator import truncate_output
 from .config.config import ConfigLoader
 from .tool_pool_manager import ToolPoolManager
 from .server_discovery_manager import ServerDiscoveryManager

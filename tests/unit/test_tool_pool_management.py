@@ -5,9 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mcpproxy.utils.tool_weight_calculator import calculate_tool_weight
-from mcpproxy.server.tool_pool_manager import ToolPoolManager
-from mcpproxy.models.schemas import ProxyConfig, EmbedderType, ToolMetadata
+from mcpproxy.models.schemas import EmbedderType, ToolRegistration, ToolMetadata
+from mcpproxy.persistence.facade import PersistenceFacade
+from mcpproxy.server.config.config import ProxyConfig
+from mcpproxy.server.server_discovery_manager import ServerDiscoveryManager
+from mcpproxy.server.mcp_server import SmartMCPProxyServer
+from mcpproxy.utils.tool_scoring.tool_weight_calculator import calculate_tool_weight
 
 
 class TestToolPoolManagerUnit:

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ..logging import get_logger
+from mcpproxy.logging import get_logger
 
 
 class ConfigFileHandler:

@@ -12,8 +12,8 @@ from ..indexer.facade import IndexerFacade
 from ..logging import get_logger
 from ..models.schemas import ToolRegistration, ToolMetadata # Add ToolMetadata import
 from ..persistence.facade import PersistenceFacade
-from ..utils.name_sanitizer import sanitize_tool_name
-from ..utils.tool_weight_calculator import calculate_tool_weight
+from ..utils.name_sanitization.name_sanitizer import sanitize_tool_name
+from ..utils.tool_scoring.tool_weight_calculator import calculate_tool_weight
 from .config.config import ProxyConfig # Corrected import
 
 logger = get_logger()

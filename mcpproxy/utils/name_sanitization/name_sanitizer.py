@@ -1,6 +1,6 @@
 import re
 import os
-from ..logging import get_logger
+from mcpproxy.logging import get_logger
 
 logger = get_logger()
 

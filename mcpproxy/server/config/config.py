@@ -4,9 +4,9 @@ import json
 import os
 from pathlib import Path
 
-from ..logging import get_logger
-from ..models.schemas import EmbedderType, ProxyConfig, ServerConfig
-from ..utils.dependencies import resolve_env_vars
+from mcpproxy.logging import get_logger
+from mcpproxy.models.schemas import EmbedderType, ProxyConfig, ServerConfig
+from mcpproxy.utils.dependency_management.dependencies import resolve_env_vars
 from .config_file_handler import ConfigFileHandler
 
 TOP_K_DEFAULT = 5  # Default number of top results for search

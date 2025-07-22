@@ -2,7 +2,7 @@
 
 import pytest
 from typing import Any
-from mcpproxy.utils.hashing import compute_tool_hash
+from mcpproxy.utils.hashing.hashing import compute_tool_hash
 from tests.utils.sample_data_generators import get_hash_test_cases
 
 

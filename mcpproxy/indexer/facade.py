@@ -4,8 +4,8 @@ from typing import Any
 
 from ..models.schemas import EmbedderType, SearchResult, ToolMetadata
 from ..persistence.facade import PersistenceFacade
-from ..utils.dependencies import check_embedder_dependencies
-from ..utils.hashing import compute_tool_hash
+from ..utils.dependency_management.dependencies import check_embedder_dependencies
+from ..utils.hashing.hashing import compute_tool_hash
 from .embedders.base import BaseEmbedder
 from .embedders.bm25 import BM25Embedder
 
