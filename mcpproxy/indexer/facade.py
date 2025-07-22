@@ -63,9 +63,7 @@ class IndexerFacade:
         }
         tool_hash = compute_tool_hash(tool_data.name, tool_data.description, extended_params)
 
-        # Check if tool already exists
-        existing_tool = await self.persistence.get_tool_by_hash(tool_hash)
-        if existing_tool:
+        if await self._is_tool_unchanged(tool_hash):
             return  # Tool unchanged, no need to re-index
 
         # Create enhanced text for embedding (include tags)
@@ -83,15 +81,13 @@ class IndexerFacade:
             vector = await self.embedder.embed_text(enhanced_text)
 
         # Store in persistence layer with extended metadata
-        tool = ToolMetadata(
-            name=tool_data.name,
-            description=tool_data.description,
-            hash=tool_hash,
-            server_name=tool_data.server_name,
-            params_json=str(extended_params) if extended_params else None,
-        )
+        tool = self._create_tool_metadata(tool_data, tool_hash, extended_params)
 
         await self.persistence.store_tool_with_vector(tool, vector)
+
+    async def _is_tool_unchanged(self, tool_hash: str) -> bool:
+        existing_tool = await self.persistence.get_tool_by_hash(tool_hash)
+        return existing_tool is not None
 
     async def index_tool_from_object(self, tool_obj: Any, server_name: str) -> None:
         """Index a tool from a Tool object, using hash-based change detection."""
@@ -135,10 +131,14 @@ class IndexerFacade:
             description=tool_data.description or "",
             hash=tool_hash,
             server_name=server_name,
-            params_json=json.dumps(tool_data.params) if tool_data.params else None,
+            params_json=self._serialize_params_to_json(tool_data.params),
         )
 
         await self.persistence.store_tool_with_vector(tool, vector)
+
+    def _serialize_params_to_json(self, params: dict[str, Any] | None) -> str | None:
+        import json
+        return json.dumps(params) if params else None
 
     def _extract_tool_data_from_obj(self, tool_obj: Any, server_name: str) -> ToolData:
         return ToolData(
@@ -147,10 +147,11 @@ class IndexerFacade:
             server_name=server_name,
             params=tool_obj.parameters,
             tags=list(tool_obj.tags) if tool_obj.tags else [],
-            annotations=str(tool_obj.annotations)
-            if tool_obj.annotations
-            else None,
+            annotations=self._get_annotations_string(tool_obj.annotations),
         )
+
+    def _get_annotations_string(self, annotations: Any) -> str | None:
+        return str(annotations) if annotations else None
 
     async def reindex_all_tools(self) -> None:
         """Rebuild the entire index with all stored tools (BM25 specific)."""
@@ -273,19 +274,24 @@ class IndexerFacade:
         }
 
         if isinstance(self.embedder, BM25Embedder):
-            stats.update(
-                {
-                    "corpus_size": len(self.embedder.corpus),
-                    "indexed": self.embedder.indexed,
-                    "index_dir": self.embedder.index_dir,
-                }
-            )
+            self._update_bm25_stats(stats)
         else:
-            # For vector embedders
-            stats.update(
-                {
-                    "dimension": self.embedder.get_dimension(),
-                }
-            )
+            self._update_vector_embedder_stats(stats)
 
         return stats
+
+    def _update_bm25_stats(self, stats: dict[str, Any]) -> None:
+        stats.update(
+            {
+                "corpus_size": len(self.embedder.corpus),
+                "indexed": self.embedder.indexed,
+                "index_dir": self.embedder.index_dir,
+            }
+        )
+
+    def _update_vector_embedder_stats(self, stats: dict[str, Any]) -> None:
+        stats.update(
+            {
+                "dimension": self.embedder.get_dimension(),
+            }
+        )

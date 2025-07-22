@@ -20,7 +20,7 @@ class BM25Embedder(BaseEmbedder):
         Args:
             index_dir: Directory to save/load BM25 index. If None, uses temp directory.
         """
-        self.index_dir = index_dir or tempfile.mkdtemp(prefix="bm25s_")
+        self.index_dir = index_dir or self._get_index_directory()
         self.retriever: bm25s.BM25 | None = None
         self.corpus: list[str] = []
         self.indexed = False
@@ -30,6 +30,10 @@ class BM25Embedder(BaseEmbedder):
 
         # Try to load existing index on initialization
         self._try_load_existing_index()
+
+    def _get_index_directory(self) -> str:
+        import tempfile
+        return tempfile.mkdtemp(prefix="bm25s_")
 
     def _try_load_existing_index(self) -> None:
         """Try to load existing index without throwing exceptions."""
@@ -89,7 +93,7 @@ class BM25Embedder(BaseEmbedder):
         return self.indexed and self.retriever is not None
 
     async def embed_text(self, text: str) -> np.ndarray:
-        """Embed single text using BM25.
+        """Embed single text using BM25."
 
         Note: For BM25, we don't create traditional embeddings.
         This method stores the text for later batch indexing.
@@ -163,15 +167,18 @@ class BM25Embedder(BaseEmbedder):
         try:
             self.retriever = bm25s.BM25.load(index_path, load_corpus=True)
 
-            # Extract corpus from loaded retriever if available
-            if hasattr(self.retriever, "corpus") and self.retriever.corpus is not None:
+            if ( hasattr(self.retriever, "corpus")
+                and self.retriever.corpus is not None
+            ):
                 # Handle different corpus formats
                 loaded_corpus = self.retriever.corpus
                 if loaded_corpus:
                     # Check if corpus items are dictionaries or strings
                     if isinstance(loaded_corpus[0], dict):
                         # Extract text from dictionary format
-                        self.corpus = [item["text"] for item in loaded_corpus]
+                        self.corpus = [
+                            item["text"] for item in loaded_corpus
+                        ]
                     else:
                         # Already in string format
                         self.corpus = list(loaded_corpus)
@@ -189,11 +196,11 @@ class BM25Embedder(BaseEmbedder):
     async def search_similar(
         self, query: str, candidate_texts: list[str] | None = None, k: int = BM25_TOP_K
     ) -> list[tuple[int, float]]:
-        """Search for similar texts using BM25.
+        """Search for similar texts using BM25."
 
         Args:
             query: Query text
-            candidate_texts: If provided, search within these texts. Otherwise use indexed corpus.
+            candidate_texts: If provided, search within these texts.
             k: Number of top results
 
         Returns:

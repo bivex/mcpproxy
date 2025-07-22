@@ -34,7 +34,9 @@ def configure_logging(level: str = "INFO", log_file: str | None = None) -> loggi
 
     # Create formatter
     formatter = DateTimeFormatter(
-        fmt="%(datetime)s [%(levelname)s] %(name)s: %(message)s"
+        fmt=(
+            "%(datetime)s [%(levelname)s] %(name)s: %(message)s"
+        )
     )
     console_handler.setFormatter(formatter)
 
@@ -43,23 +45,28 @@ def configure_logging(level: str = "INFO", log_file: str | None = None) -> loggi
 
     # Add file handler if specified
     if log_file:
-        try:
-            # Ensure log directory exists
-            log_path = Path(log_file)
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            file_handler = logging.FileHandler(log_file)
-            file_handler.setLevel(getattr(logging, level.upper()))
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
-        except Exception as e:
-            # Log the error to stderr but don't fail
-            print(f"Warning: Could not create log file {log_file}: {e}", file=sys.stderr)
+        _add_file_handler(logger, log_file, level, formatter)
 
     # Prevent propagation to root logger to avoid duplicate messages
     logger.propagate = False
 
     return logger
+
+def _add_file_handler(
+    logger: logging.Logger, log_file: str, level: str, formatter: logging.Formatter
+) -> None:
+    try:
+        # Ensure log directory exists
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(getattr(logging, level.upper()))
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    except Exception as e:
+        # Log the error to stderr but don't fail
+        print(f"Warning: Could not create log file {log_file}: {e}", file=sys.stderr)
 
 
 def get_logger(name: str = "mcpproxy") -> logging.Logger:

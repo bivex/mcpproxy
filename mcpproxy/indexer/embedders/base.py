@@ -11,7 +11,7 @@ class BaseEmbedder(ABC):
 
     @abstractmethod
     async def embed_text(self, text: str) -> np.ndarray:
-        """Embed a single text string.
+        """Embed a single text string."
 
         Args:
             text: Text to embed
@@ -21,9 +21,8 @@ class BaseEmbedder(ABC):
         """
         pass
 
-    @abstractmethod
     async def embed_batch(self, texts: list[str]) -> list[np.ndarray]:
-        """Embed a batch of text strings.
+        """Embed a batch of text strings."
 
         Args:
             texts: List of texts to embed
@@ -88,14 +87,18 @@ class BaseEmbedder(ABC):
         Returns:
             Combined text representation
         """
-        text_parts = [f"Tool: {name}", f"Description: {description}"]
+        text_parts = [
+            f"Tool: {name}", f"Description: {description}"
+        ]
 
         if params:
             # Flatten parameters for text representation
             param_texts = []
             for param_name, param_info in params.get("properties", {}).items():
                 param_type, param_desc = self._extract_param_info(param_info)
-                param_texts.append(f"{param_name} ({param_type}): {param_desc}")
+                param_texts.append(
+                    f"{param_name} ({param_type}): {param_desc}"
+                )
 
             if param_texts:
                 text_parts.append(f"Parameters: {'; '.join(param_texts)}")

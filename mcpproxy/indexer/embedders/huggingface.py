@@ -16,7 +16,8 @@ class HuggingFaceEmbedder(BaseEmbedder):
             from sentence_transformers import SentenceTransformer
         except ImportError:
             print(
-                "\n❌ ERROR: HuggingFace embeddings requires sentence-transformers but it's not installed.",
+                "\n❌ ERROR: HuggingFace embeddings requires sentence-transformers"
+                " but it\'s not installed.",
                 file=sys.stderr
             )
             print("   To use HuggingFace embeddings, install with:", file=sys.stderr)
