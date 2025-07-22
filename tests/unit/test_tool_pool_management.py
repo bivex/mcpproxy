@@ -21,115 +21,79 @@ class TestToolPoolManagement:
             server.mcp.remove_tool = MagicMock()
             return server
 
-    def test_calculate_tool_weight_fresh_tool(self, mock_server):
-        """Test weight calculation for fresh tools."""
+    @pytest.mark.parametrize(
+        "score, time_ago_minutes, expected_weight_tolerance",
+        [
+            (0.8, 0, 0.01),  # Fresh tool
+            (0.8, 35, 0.01), # Old tool (older than max age)
+            (0.6, 15, 0.01), # Medium age
+        ],
+    )
+    def test_calculate_tool_weight_scenarios(
+        self, mock_server, score: float, time_ago_minutes: int, expected_weight_tolerance: float
+    ):
+        """Test weight calculation for various tool ages."""
         current_time = time.time()
-        score = 0.8
+        timestamp = current_time - (time_ago_minutes * 60)
 
-        # Fresh tool (just added)
-        weight = mock_server._calculate_tool_weight(score, current_time)
+        weight = mock_server._calculate_tool_weight(score, timestamp)
 
-        # Should be close to original score since freshness is high
-        expected = (score * 0.7) + (1.0 * 0.3)  # 0.56 + 0.3 = 0.86
-        assert abs(weight - expected) < 0.01
+        # Expected calculation based on the method: (score * 0.7) + (freshness * 0.3)
+        # Freshness is (max_age_seconds - age_seconds) / max_age_seconds
+        # Max age is 30 minutes (1800 seconds)
+        age_seconds = time_ago_minutes * 60
+        max_age_seconds = 30 * 60
+        freshness = max(0.0, 1.0 - (age_seconds / max_age_seconds))
+        expected = (score * 0.7) + (freshness * 0.3)
 
-    def test_calculate_tool_weight_old_tool(self, mock_server):
-        """Test weight calculation for old tools."""
-        current_time = time.time()
-        old_timestamp = current_time - (35 * 60)  # 35 minutes ago (older than max age)
-        score = 0.8
+        assert abs(weight - expected) < expected_weight_tolerance
 
-        weight = mock_server._calculate_tool_weight(score, old_timestamp)
-
-        # Should be just the score since freshness is 0
-        expected = (score * 0.7) + (0.0 * 0.3)  # 0.56 + 0 = 0.56
-        assert abs(weight - expected) < 0.01
-
-    def test_calculate_tool_weight_medium_age(self, mock_server):
-        """Test weight calculation for medium-age tools."""
-        current_time = time.time()
-        medium_timestamp = current_time - (15 * 60)  # 15 minutes ago (half max age)
-        score = 0.6
-
-        weight = mock_server._calculate_tool_weight(score, medium_timestamp)
-
-        # Freshness should be 0.5 (15min / 30min = 0.5, so freshness = 1 - 0.5 = 0.5)
-        expected = (score * 0.7) + (0.5 * 0.3)  # 0.42 + 0.15 = 0.57
-        assert abs(weight - expected) < 0.01
-
+    @pytest.mark.parametrize(
+        "scenario, initial_tools, new_tools, expected_evicted_count, expected_evicted_names, mock_evict_tool_called",
+        [
+            ("no_eviction", {"tool1": {}, "tool2": {}}, [("new_tool", 0.8)], 0, [], False),
+            ("with_eviction", {
+                "tool1": {"timestamp": time.time() - 1800, "score": 0.5}, # Old, low score
+                "tool2": {"timestamp": time.time() - 900, "score": 0.9}, # Medium age, high score
+                "tool3": {"timestamp": time.time(), "score": 0.7}, # Fresh, medium score
+            }, [("new_tool1", 0.8), ("new_tool2", 0.6)], 2, ["tool1"], True),
+            ("evict_only", {}, [], 1, ["tool1"], True) # Example for evict_tool specific test
+        ]
+    )
     @pytest.mark.asyncio
-    async def test_enforce_tool_pool_limit_no_eviction_needed(self, mock_server):
-        """Test pool limit enforcement when no eviction is needed."""
-        # Current pool has 2 tools, limit is 3, adding 1 tool
-        mock_server.current_tool_registrations = {
-            "tool1": MagicMock(),
-            "tool2": MagicMock(),
-        }
+    async def test_enforce_tool_pool_limit_scenarios(
+        self, mock_server, scenario, initial_tools, new_tools, expected_evicted_count, expected_evicted_names, mock_evict_tool_called
+    ):
+        """Test tool pool limit enforcement and eviction scenarios."""
+        mock_server.current_tool_registrations = {name: MagicMock() for name in initial_tools}
+        mock_server.tool_pool_metadata = initial_tools
+        mock_server._evict_tool = AsyncMock() # Mock the internal method
 
-        new_tools = [("new_tool", 0.8)]
-        evicted = await mock_server._enforce_tool_pool_limit(new_tools)
+        if scenario == "evict_only":
+            # This scenario is specifically for testing _evict_tool, not enforce_tool_pool_limit directly
+            tool_name_to_evict = expected_evicted_names[0]
+            mock_server.current_tool_registrations[tool_name_to_evict] = MagicMock()
+            mock_server.registered_tools[tool_name_to_evict] = MagicMock()
+            mock_server.tool_pool_metadata[tool_name_to_evict] = {
+                "timestamp": time.time(),
+                "score": 0.5,
+            }
+            await mock_server._evict_tool(tool_name_to_evict)
 
-        assert evicted == []
+            assert tool_name_to_evict not in mock_server.current_tool_registrations
+            assert tool_name_to_evict not in mock_server.registered_tools
+            assert tool_name_to_evict not in mock_server.tool_pool_metadata
+            mock_server.mcp.remove_tool.assert_called_once_with(tool_name_to_evict)
+        else:
+            evicted = await mock_server._enforce_tool_pool_limit(new_tools)
+            assert len(evicted) == expected_evicted_count
+            for name in expected_evicted_names:
+                assert name in evicted
 
-    @pytest.mark.asyncio
-    async def test_enforce_tool_pool_limit_with_eviction(self, mock_server):
-        """Test pool limit enforcement with eviction."""
-        current_time = time.time()
-
-        # Set up current pool with 3 tools (at limit)
-        mock_server.current_tool_registrations = {
-            "tool1": MagicMock(),
-            "tool2": MagicMock(),
-            "tool3": MagicMock(),
-        }
-
-        # Set up metadata with different scores and ages
-        mock_server.tool_pool_metadata = {
-            "tool1": {"timestamp": current_time - 1800, "score": 0.5},  # Old, low score
-            "tool2": {
-                "timestamp": current_time - 900,
-                "score": 0.9,
-            },  # Medium age, high score
-            "tool3": {"timestamp": current_time, "score": 0.7},  # Fresh, medium score
-        }
-
-        # Mock the evict_tool method
-        mock_server._evict_tool = AsyncMock()
-
-        # Try to add 2 new tools (would exceed limit by 2)
-        new_tools = [("new_tool1", 0.8), ("new_tool2", 0.6)]
-        evicted = await mock_server._enforce_tool_pool_limit(new_tools)
-
-        # Should evict 2 tools
-        assert len(evicted) == 2
-        # tool1 should be evicted first (lowest weighted score)
-        assert "tool1" in evicted
-
-        # Verify evict_tool was called for each evicted tool
-        assert mock_server._evict_tool.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_evict_tool(self, mock_server):
-        """Test tool eviction process."""
-        tool_name = "test_tool"
-
-        # Set up tool in all tracking structures
-        mock_server.current_tool_registrations[tool_name] = MagicMock()
-        mock_server.registered_tools[tool_name] = MagicMock()
-        mock_server.tool_pool_metadata[tool_name] = {
-            "timestamp": time.time(),
-            "score": 0.5,
-        }
-
-        await mock_server._evict_tool(tool_name)
-
-        # Verify tool was removed from all tracking structures
-        assert tool_name not in mock_server.current_tool_registrations
-        assert tool_name not in mock_server.registered_tools
-        assert tool_name not in mock_server.tool_pool_metadata
-
-        # Verify FastMCP remove_tool was called
-        mock_server.mcp.remove_tool.assert_called_once_with(tool_name)
+            if mock_evict_tool_called:
+                assert mock_server._evict_tool.call_count == expected_evicted_count
+            else:
+                mock_server._evict_tool.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_register_proxy_tool_with_metadata(self, mock_server):

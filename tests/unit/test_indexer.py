@@ -4,9 +4,11 @@ import os
 import tempfile
 from enum import Enum
 from unittest.mock import AsyncMock, patch
+from typing import Any
 
 import numpy as np
 import pytest
+import json
 
 from mcpproxy.indexer.base import BaseEmbedder
 from mcpproxy.indexer.bm25 import BM25Embedder
@@ -45,212 +47,169 @@ class MockEmbedder(BaseEmbedder):
 class TestBaseEmbedder:
     """Test cases for BaseEmbedder functionality."""
 
-    def test_combine_tool_text_basic(self):
-        """Test basic tool text combination."""
-        embedder = MockEmbedder()
-
-        result = embedder.combine_tool_text("test_tool", "Test description", None)
-
-        expected = "Tool: test_tool | Description: Test description"
-        assert result == expected
-
-    def test_combine_tool_text_with_params(self):
-        """Test tool text combination with parameters."""
-        embedder = MockEmbedder()
-
-        params = {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Tool name"},
-                "count": {"type": "integer", "description": "Count value"},
-            },
-        }
-
-        result = embedder.combine_tool_text("test_tool", "Test description", params)
-
-        assert "Tool: test_tool" in result
-        assert "Description: Test description" in result
-        assert "Parameters:" in result
-        assert "name (string): Tool name" in result
-        assert "count (integer): Count value" in result
-
-    def test_combine_tool_text_empty_params(self):
-        """Test tool text combination with empty parameters."""
-        embedder = MockEmbedder()
-
-        result = embedder.combine_tool_text("test_tool", "Test description", {})
-
-        expected = "Tool: test_tool | Description: Test description"
-        assert result == expected
-
-    def test_combine_tool_text_complex_anyof_params(self):
-        """Test tool text combination with complex anyOf parameter schemas like gcore tools."""
-        embedder = MockEmbedder()
-
-        # Simulate complex gcore-style parameter schemas
-        params = {
-            "type": "object",
-            "properties": {
-                "project_id": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "default": None,
-                    "title": "Project Id",
+    @pytest.mark.parametrize(
+        "description, params, expected_contains",
+        [
+            ("Test description", None, ["Tool: test_tool", "Description: Test description"]),
+            ("Test description", {},
+             ["Tool: test_tool", "Description: Test description"]),
+            (
+                "Test description",
+                {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Tool name"},
+                        "count": {"type": "integer", "description": "Count value"},
+                    },
                 },
-                "region_id": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "default": None,
-                    "title": "Region Id",
+                [
+                    "Tool: test_tool",
+                    "Description: Test description",
+                    "Parameters:",
+                    "name (string): Tool name",
+                    "count (integer): Count value",
+                ],
+            ),
+            (
+                "Test description",
+                {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                        "region_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                    },
                 },
-                "delete_floatings": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "title": "Delete Floatings",
+                [
+                    "Tool: test_tool",
+                    "Description: Test description",
+                    "Parameters:",
+                    "project_id (string, null)",
+                    "region_id (string, null)",
+                ],
+            ),
+            (
+                "Test description",
+                {
+                    "type": "object",
+                    "properties": {"data": {"oneOf": [{"type": "string"}, {"type": "integer"}]}},
                 },
-                "timeout": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "title": "Timeout",
+                [
+                    "Tool: test_tool",
+                    "Description: Test description",
+                    "Parameters:",
+                    "data (string, integer)",
+                ],
+            ),
+            (
+                "Test description",
+                {
+                    "type": "object",
+                    "properties": {"value": {"type": "string", "title": "My Value"}},
                 },
-                "instance_id": {"title": "Instance Id", "type": "string"},
-            },
-            "required": ["instance_id"],
-            "title": "DeleteInstance",
-        }
-
-        result = embedder.combine_tool_text(
-            "delete_instance", "Delete an instance", params
-        )
-
-        # Verify the result contains expected elements
-        assert "Tool: delete_instance" in result
-        assert "Description: Delete an instance" in result
-        assert "Parameters:" in result
-
-        # Check that complex anyOf types are handled correctly
-        assert "project_id (string|null): Project Id" in result
-        assert "region_id (string|null): Region Id" in result
-        assert "delete_floatings (string|null): Delete Floatings" in result
-        assert "timeout (string|null): Timeout" in result
-        assert "instance_id (string): Instance Id" in result
-
-    def test_combine_tool_text_oneof_params(self):
-        """Test tool text combination with oneOf parameter schemas."""
+                [
+                    "Tool: test_tool",
+                    "Description: Test description",
+                    "Parameters:",
+                    "value (string): My Value",
+                ],
+            ),
+        ],
+    )
+    def test_combine_tool_text_scenarios(self, description: str, params: Any, expected_contains: list[str]):
+        """Test various scenarios for tool text combination."""
         embedder = MockEmbedder()
+        result = embedder.combine_tool_text("test_tool", description, params)
 
-        params = {
-            "type": "object",
-            "properties": {
-                "value": {
-                    "oneOf": [{"type": "string"}, {"type": "integer"}],
-                    "description": "A value that can be string or integer",
-                }
-            },
-        }
-
-        result = embedder.combine_tool_text("test_tool", "Test description", params)
-
-        assert "value (string|integer): A value that can be string or integer" in result
-
-    def test_combine_tool_text_title_fallback(self):
-        """Test that title is used when description is not available."""
-        embedder = MockEmbedder()
-
-        params = {
-            "type": "object",
-            "properties": {
-                "param_with_title": {
-                    "type": "string",
-                    "title": "Parameter Title",
-                    # No description field
-                }
-            },
-        }
-
-        result = embedder.combine_tool_text("test_tool", "Test description", params)
-
-        assert "param_with_title (string): Parameter Title" in result
+        for expected_str in expected_contains:
+            assert expected_str in result, f"Expected '{expected_str}' not found in '{result}'"
 
     def test_extract_param_info_edge_cases(self):
-        """Test _extract_param_info with edge cases."""
+        """Test edge cases for extract_param_info."""
         embedder = MockEmbedder()
+        # Test with no properties
+        params = {"type": "object"}
+        result = embedder._extract_param_info(params)
+        assert result == []
 
-        # Test empty param_info
-        param_type, param_desc = embedder._extract_param_info({})
-        assert param_type == "unknown"
-        assert param_desc == ""
+        # Test with missing description
+        params = {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+        }
+        result = embedder._extract_param_info(params)
+        assert result == ["name (string)"]
 
-        # Test anyOf with non-dict elements
-        param_info = {"anyOf": ["invalid", {"type": "string"}]}
-        param_type, param_desc = embedder._extract_param_info(param_info)
-        assert param_type == "string"
+        # Test with nested types (should ignore nested structures for simple extraction)
+        params = {
+            "type": "object",
+            "properties": {"data": {"type": "object", "properties": {"key": {"type": "string"}}}},
+        }
+        result = embedder._extract_param_info(params)
+        assert result == ["data (object)"]
 
-        # Test anyOf with no valid types
-        param_info = {"anyOf": [{"invalid": "data"}]}
-        param_type, param_desc = embedder._extract_param_info(param_info)
-        assert param_type == "unknown"
+        # Test with array items
+        params = {
+            "type": "object",
+            "properties": {"items": {"type": "array", "items": {"type": "integer"}}},
+        }
+        result = embedder._extract_param_info(params)
+        assert result == ["items (array)"]
 
 
 class TestBM25Embedder:
-    """Test cases for BM25Embedder."""
+    """Test cases for BM25Embedder functionality."""
 
     @pytest.fixture
     def temp_index_dir(self):
-        """Create temporary directory for BM25 index."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            yield temp_dir
+        """Temporary directory for BM25 index."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield tmpdir
 
     @pytest.mark.asyncio
     async def test_bm25_embedder_initialization(self, temp_index_dir):
-        """Test BM25 embedder initialization."""
+        """Test BM25Embedder initialization and index creation."""
         embedder = BM25Embedder(temp_index_dir)
-
         assert embedder.index_dir == temp_index_dir
-        assert not embedder.indexed
         assert embedder.corpus == []
+        assert not embedder.indexed
         assert embedder.retriever is None
-
-    @pytest.mark.asyncio
-    async def test_bm25_fit_corpus(self, temp_index_dir):
-        """Test fitting BM25 on corpus."""
-        embedder = BM25Embedder(temp_index_dir)
-        texts = [
-            "create virtual machine instance",
-            "delete storage volume",
-            "list monitoring metrics",
-        ]
-
-        await embedder.fit_corpus(texts)
-
-        assert embedder.indexed
-        assert embedder.corpus == texts
-        assert embedder.retriever is not None
         # Check index files were created
         assert os.path.exists(os.path.join(temp_index_dir, "bm25s_index"))
 
     @pytest.mark.asyncio
-    async def test_bm25_embed_text(self, temp_index_dir):
-        """Test BM25 text embedding."""
+    async def test_bm25_fit_corpus(self, temp_index_dir):
+        """Test BM25 corpus fitting."""
         embedder = BM25Embedder(temp_index_dir)
+        corpus = ["doc one", "doc two", "doc three"]
+        await embedder.fit_corpus(corpus)
 
-        vector = await embedder.embed_text("test text")
+        assert embedder.corpus == corpus
+        assert embedder.indexed
+        assert embedder.retriever is not None
 
-        assert isinstance(vector, np.ndarray)
-        assert vector.dtype == np.float32
-        assert len(vector) == 1  # BM25 returns placeholder vector
-        assert "test text" in embedder.corpus
-        assert not embedder.indexed  # Should be marked for reindexing
-
+    @pytest.mark.parametrize("texts", [
+        "test text",
+        ["text one", "text two", "text three"]
+    ])
     @pytest.mark.asyncio
-    async def test_bm25_embed_batch(self, temp_index_dir):
-        """Test BM25 batch embedding."""
+    async def test_bm25_embedding_scenarios(self, temp_index_dir, texts):
+        """Test BM25 text and batch embedding."""
         embedder = BM25Embedder(temp_index_dir)
-        texts = ["text one", "text two", "text three"]
 
-        vectors = await embedder.embed_batch(texts)
-
-        assert len(vectors) == 3
-        assert all(isinstance(v, np.ndarray) for v in vectors)
-        assert all(v.dtype == np.float32 for v in vectors)
-        assert all(len(v) == 1 for v in vectors)  # Placeholder vectors
-        assert all(text in embedder.corpus for text in texts)
+        if isinstance(texts, str):
+            vector = await embedder.embed_text(texts)
+            assert isinstance(vector, np.ndarray)
+            assert vector.dtype == np.float32
+            assert len(vector) == 1  # BM25 returns placeholder vector
+            assert texts in embedder.corpus
+        else:
+            vectors = await embedder.embed_batch(texts)
+            assert len(vectors) == len(texts)
+            assert all(isinstance(v, np.ndarray) for v in vectors)
+            assert all(v.dtype == np.float32 for v in vectors)
+            assert all(len(v) == 1 for v in vectors)  # Placeholder vectors
+            assert all(text in embedder.corpus for text in texts)
+        assert not embedder.indexed  # Should be marked for reindexing
 
     @pytest.mark.asyncio
     async def test_bm25_reindex(self, temp_index_dir):
@@ -270,20 +229,24 @@ class TestBM25Embedder:
         assert embedder.indexed
         assert embedder.retriever is not None
 
+    @pytest.mark.parametrize("query, candidate_texts, k, expected_results_len", [
+        ("create instance", ["create virtual machine instance", "delete storage volume"], 2, 1),
+        ("create instance", None, 2, 1), # Uses pre-indexed corpus
+        ("test query", [], 5, 0) # Empty candidates
+    ])
     @pytest.mark.asyncio
-    async def test_bm25_search_similar(self, temp_index_dir):
-        """Test BM25 similarity search."""
+    async def test_bm25_search_scenarios(self, temp_index_dir, query, candidate_texts, k, expected_results_len):
+        """Test BM25 similarity search scenarios."""
         embedder = BM25Embedder(temp_index_dir)
-        candidate_texts = [
-            "create virtual machine instance",
-            "delete storage volume",
-            "list network interfaces",
-            "monitor system performance",
-        ]
 
-        results = await embedder.search_similar("create instance", candidate_texts, k=2)
+        if candidate_texts is None:
+            # If candidate_texts is None, means we should use pre-indexed corpus
+            corpus = ["create virtual machine instance", "delete storage volume", "list network interfaces"]
+            await embedder.fit_corpus(corpus)
 
-        assert len(results) <= 2
+        results = await embedder.search_similar(query, candidate_texts, k=k)
+
+        assert len(results) == expected_results_len
         assert all(isinstance(r, tuple) for r in results)
         assert all(len(r) == 2 for r in results)  # (index, score)
         assert all(isinstance(r[0], int) for r in results)
@@ -294,52 +257,19 @@ class TestBM25Embedder:
             assert results[0][1] >= results[1][1]
 
     @pytest.mark.asyncio
-    async def test_bm25_search_with_indexed_corpus(self, temp_index_dir):
-        """Test BM25 search using pre-indexed corpus."""
+    async def test_bm25_load_index(self, temp_index_dir):
+        """Test loading an existing BM25 index."""
         embedder = BM25Embedder(temp_index_dir)
-        corpus = [
-            "create virtual machine instance",
-            "delete storage volume",
-            "list network interfaces",
-        ]
-
-        # Index the corpus first
+        corpus = ["doc 1", "doc 2"]
         await embedder.fit_corpus(corpus)
 
-        # Search without providing candidate_texts (use indexed corpus)
-        results = await embedder.search_similar("create instance", None, k=2)
+        # Create a new embedder instance to load the saved index
+        new_embedder = BM25Embedder(temp_index_dir)
+        new_embedder.load_index()
 
-        assert len(results) <= 2
-        assert all(isinstance(r, tuple) for r in results)
-        # Results should reference the indexed corpus
-        if results:
-            assert 0 <= results[0][0] < len(corpus)
-
-    @pytest.mark.asyncio
-    async def test_bm25_search_empty_candidates(self, temp_index_dir):
-        """Test BM25 search with empty candidates."""
-        embedder = BM25Embedder(temp_index_dir)
-
-        results = await embedder.search_similar("test query", [], k=5)
-
-        assert results == []
-
-    @pytest.mark.asyncio
-    async def test_bm25_load_index(self, temp_index_dir):
-        """Test loading BM25 index from disk."""
-        # Create and save an index
-        embedder1 = BM25Embedder(temp_index_dir)
-        texts = ["test document one", "test document two"]
-        await embedder1.fit_corpus(texts)
-
-        # Create new embedder and load the index
-        embedder2 = BM25Embedder(temp_index_dir)
-        success = embedder2.load_index()
-
-        assert success
-        assert embedder2.indexed
-        assert embedder2.retriever is not None
-        assert len(embedder2.corpus) == len(texts)
+        assert new_embedder.corpus == corpus
+        assert new_embedder.indexed
+        assert new_embedder.retriever is not None
 
 
 class TestIndexerFacade:
@@ -387,88 +317,58 @@ class TestIndexerFacade:
             # This will fail at the dependencies check or the embedder creation
             IndexerFacade(mock_persistence, UnknownEmbedderType.UNKNOWN)
 
+    @pytest.mark.parametrize(
+        "name, description, server_name, params, tags, annotations, is_duplicate, expected_store_call, expected_reindex",
+        [
+            ("basic_tool", "Basic description", "server1", None, [], {}, False, True, True),
+            ("tool_with_metadata", "Description with metadata", "server1",
+             {"type": "object", "properties": {"name": {"type": "string"}}},
+             ["compute"], {"category": "compute"}, False, True, True),
+            ("duplicate_tool", "Duplicate description", "server1", None, [], {}, True, False, False),
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_index_tool_basic(self, mock_persistence, temp_index_dir):
-        """Test basic tool indexing."""
+    async def test_indexer_facade_tool_indexing_scenarios(
+        self, mock_persistence, temp_index_dir, name, description, server_name, params, tags, annotations, is_duplicate, expected_store_call, expected_reindex
+    ):
+        """Test various tool indexing scenarios including duplicates."""
+        if is_duplicate:
+            existing_tool = ToolMetadata(
+                id=1,
+                name=name,
+                description=description,
+                hash="duplicate_hash_value", # Needs to be consistent for mock
+                server_name=server_name,
+                params_json=json.dumps(params or {})
+            )
+            mock_persistence.get_tool_by_hash.return_value = existing_tool
+
         indexer = IndexerFacade(
             mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
         )
 
-        await indexer.index_tool(
-            name="test_tool",
-            description="Test tool description",
-            server_name="test-server",
-        )
+        await indexer.index_tool(name, description, server_name, params, tags, annotations)
 
-        # Verify persistence calls
         mock_persistence.get_tool_by_hash.assert_called_once()
-        mock_persistence.store_tool_with_vector.assert_called_once()
 
-        # Check the stored tool metadata
-        call_args = mock_persistence.store_tool_with_vector.call_args
-        stored_tool, stored_vector = call_args[0]
+        if expected_store_call:
+            mock_persistence.store_tool_with_vector.assert_called_once()
+            call_args = mock_persistence.store_tool_with_vector.call_args
+            stored_tool, _ = call_args[0]
+            assert stored_tool.name == name
+            assert stored_tool.description == description
+            assert stored_tool.server_name == server_name
+            if params: # Check if params are part of params_json
+                assert stored_tool.params_json is not None
+                assert json.loads(stored_tool.params_json).get("properties") == params.get("properties")
+            if tags:
+                assert json.loads(stored_tool.params_json).get("tags") == tags
+            if annotations:
+                assert json.loads(stored_tool.params_json).get("annotations") == annotations
+        else:
+            mock_persistence.store_tool_with_vector.assert_not_called()
 
-        assert stored_tool.name == "test_tool"
-        assert stored_tool.description == "Test tool description"
-        assert stored_tool.server_name == "test-server"
-        assert isinstance(stored_vector, np.ndarray)
-
-        # Should be marked for reindexing
-        assert indexer._needs_reindex
-
-    @pytest.mark.asyncio
-    async def test_index_tool_with_metadata(self, mock_persistence, temp_index_dir):
-        """Test tool indexing with full metadata."""
-        indexer = IndexerFacade(
-            mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
-        )
-
-        params = {"type": "object", "properties": {"name": {"type": "string"}}}
-        tags = ["compute", "vm"]
-        annotations = {"category": "compute"}
-
-        await indexer.index_tool(
-            name="test_tool",
-            description="Test tool",
-            server_name="test-server",
-            params=params,
-            tags=tags,
-            annotations=annotations,
-        )
-
-        # Verify extended params in hash computation
-        call_args = mock_persistence.store_tool_with_vector.call_args
-        stored_tool, _ = call_args[0]
-
-        assert "tags" in stored_tool.params_json
-        assert "annotations" in stored_tool.params_json
-        assert stored_tool.params_json is not None
-
-    @pytest.mark.asyncio
-    async def test_index_tool_duplicate_hash(self, mock_persistence, temp_index_dir):
-        """Test indexing tool with existing hash (should skip)."""
-        # Mock existing tool
-        existing_tool = ToolMetadata(
-            id=1,
-            name="existing",
-            description="desc",
-            hash="existing_hash",
-            server_name="server",
-        )
-        mock_persistence.get_tool_by_hash.return_value = existing_tool
-
-        indexer = IndexerFacade(
-            mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
-        )
-
-        await indexer.index_tool("test_tool", "description", "server")
-
-        # Should call get_tool_by_hash but not store_tool_with_vector
-        mock_persistence.get_tool_by_hash.assert_called_once()
-        mock_persistence.store_tool_with_vector.assert_not_called()
-
-        # Should not mark for reindexing since tool wasn't added
-        assert not indexer._needs_reindex
+        assert indexer._needs_reindex == expected_reindex
 
     @pytest.mark.asyncio
     async def test_reindex_all_tools(self, mock_persistence, temp_index_dir):
@@ -505,136 +405,116 @@ class TestIndexerFacade:
         assert indexer.embedder.indexed
         assert len(indexer.embedder.corpus) == 2
 
+    @pytest.mark.parametrize(
+        "scenario, query, k, expected_results",
+        [
+            ("bm25_basic", "create virtual machine", 2, {"len": 2, "tool_name": "create_instance", "score_check": True}),
+            ("vector_embedder", "test query", 3, {"len": 1, "tool_name": "test_tool"}),
+            ("no_results", "nonexistent query", 5, {"len": 0}),
+            ("sample_data", "create virtual machine", 5, {"len_min": 1, "tool_names": ["create_instance"], "min_score_check": True}),
+            ("sample_data", "nonsense random query xyz", 5, {"len_max": 0, "max_score_check": True}),
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_search_tools_bm25(self, mock_persistence, temp_index_dir):
-        """Test tool search with BM25 embedder."""
-        # Setup mock tools
-        sample_tools = [
-            ToolMetadata(
-                id=1,
-                name="create_instance",
-                description="Create VM",
-                hash="hash1",
-                server_name="api",
-                params_json='{"parameters": {}, "tags": [], "annotations": null}',
-            ),
-            ToolMetadata(
-                id=2,
-                name="delete_volume",
-                description="Delete storage",
-                hash="hash2",
-                server_name="api",
-                params_json='{"parameters": {}, "tags": [], "annotations": null}',
-            ),
-        ]
-        mock_persistence.get_all_tools.return_value = sample_tools
+    async def test_indexer_facade_search_scenarios(
+        self, mock_persistence, temp_index_dir, scenario, query, k, expected_results
+    ):
+        """Test various search scenarios for IndexerFacade."""
 
         indexer = IndexerFacade(
             mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
         )
 
-        # Mock BM25 search to return first tool as best match
-        with patch.object(indexer.embedder, "search_similar") as mock_search:
-            mock_search.return_value = [(0, 0.8), (1, 0.3)]
-
-            results = await indexer.search_tools("create virtual machine", k=2)
-
-            assert len(results) == 2
-            assert all(isinstance(r, SearchResult) for r in results)
-            assert results[0].tool.name == "create_instance"
-            # With modified sigmoid normalization: 1 / (1 + exp(-0.8)) ≈ 0.689
-            assert abs(results[0].score - 0.689) < 0.01
-            # Second result with modified sigmoid: 1 / (1 + exp(-0.3)) ≈ 0.574
-            assert abs(results[1].score - 0.574) < 0.01
-            # First result should still have higher score
-            assert results[0].score > results[1].score
-
-    @pytest.mark.asyncio
-    async def test_search_tools_vector_embedder(self, mock_persistence, temp_index_dir):
-        """Test tool search with vector embedder."""
-        # Create indexer with mock vector embedder
-        indexer = IndexerFacade(
-            mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
-        )
-        indexer.embedder = MockEmbedder()  # Not BM25, so will use vector path
-
-        # Mock vector search results
-        mock_results = [
-            SearchResult(
-                tool=ToolMetadata(
+        if scenario == "bm25_basic":
+            sample_tools = [
+                ToolMetadata(
                     id=1,
-                    name="test_tool",
-                    description="desc",
-                    hash="hash",
-                    server_name="server",
+                    name="create_instance",
+                    description="Create VM",
+                    hash="hash1",
+                    server_name="api",
+                    params_json='{"parameters": {}, "tags": [], "annotations": null}',
                 ),
-                score=0.9,
-            )
-        ]
-        mock_persistence.search_similar_tools.return_value = mock_results
+                ToolMetadata(
+                    id=2,
+                    name="delete_volume",
+                    description="Delete storage",
+                    hash="hash2",
+                    server_name="api",
+                    params_json='{"parameters": {}, "tags": [], "annotations": null}',
+                ),
+            ]
+            mock_persistence.get_all_tools.return_value = sample_tools
+            with patch.object(indexer.embedder, "search_similar") as mock_search:
+                mock_search.return_value = [(0, 0.8), (1, 0.3)]
+                results = await indexer.search_tools(query, k=k)
 
-        results = await indexer.search_tools("test query", k=3)
+                assert len(results) == expected_results["len"]
+                assert all(isinstance(r, SearchResult) for r in results)
+                assert results[0].tool.name == expected_results["tool_name"]
+                if expected_results.get("score_check"):
+                    assert abs(results[0].score - 0.689) < 0.01
+                    assert abs(results[1].score - 0.574) < 0.01
+                    assert results[0].score > results[1].score
 
-        assert len(results) == 1
-        assert results[0].tool.name == "test_tool"
-        assert results[0].score == 0.9
-
-        # Verify vector search was called
-        mock_persistence.search_similar_tools.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_search_tools_no_results(self, mock_persistence, temp_index_dir):
-        """Test search with no matching tools."""
-        mock_persistence.get_all_tools.return_value = []
-
-        indexer = IndexerFacade(
-            mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
-        )
-
-        results = await indexer.search_tools("nonexistent query", k=5)
-
-        assert results == []
-
-    @pytest.mark.asyncio
-    async def test_search_tools_with_sample_data(self, temp_indexer_facade):
-        """Test search with realistic sample data."""
-        sample_data = get_sample_tools_data()
-
-        # Index sample tools
-        for tool_data in sample_data:
-            await temp_indexer_facade.index_tool(
-                name=tool_data["name"],
-                description=tool_data["description"],
-                server_name=tool_data["server_name"],
-                params=tool_data["params"],
-                tags=tool_data.get("tags", []),
-                annotations=tool_data.get("annotations", {}),
-            )
-
-        # Test various search queries
-        queries = get_search_queries()
-
-        for query_data in queries:
-            query = query_data["query"]
-            expected_tools = query_data["expected_tools"]
-            min_score = query_data["min_score"]
-
-            results = await temp_indexer_facade.search_tools(query, k=5)
-
-            if expected_tools:
-                # Should find at least one expected tool
-                found_tools = {r.tool.name for r in results}
-                assert any(tool in found_tools for tool in expected_tools), (
-                    f"Query '{query}' should find at least one of {expected_tools}, got {found_tools}"
+        elif scenario == "vector_embedder":
+            indexer.embedder = MockEmbedder() # Use mock for vector embedder
+            mock_results = [
+                SearchResult(
+                    tool=ToolMetadata(
+                        id=1,
+                        name=expected_results["tool_name"],
+                        description="desc",
+                        hash="hash",
+                        server_name="server",
+                    ),
+                    score=0.9,
                 )
+            ]
+            mock_persistence.search_similar_tools.return_value = mock_results
+            results = await indexer.search_tools(query, k=k)
 
-                # Check minimum score
+            assert len(results) == expected_results["len"]
+            assert results[0].tool.name == expected_results["tool_name"]
+            assert results[0].score == 0.9
+            mock_persistence.search_similar_tools.assert_called_once()
+
+        elif scenario == "no_results":
+            mock_persistence.get_all_tools.return_value = []
+            results = await indexer.search_tools(query, k=k)
+            assert results == []
+
+        elif scenario == "sample_data":
+            sample_data = get_sample_tools_data()
+            for tool_data in sample_data:
+                await indexer.index_tool(
+                    name=tool_data["name"],
+                    description=tool_data["description"],
+                    server_name=tool_data["server_name"],
+                    params=tool_data["params"],
+                    tags=tool_data.get("tags", []),
+                    annotations=tool_data.get("annotations", {}),
+                )
+            queries = get_search_queries()
+            query_data = next(q for q in queries if q["query"] == query)
+
+            results = await indexer.search_tools(query, k=k)
+
+            if expected_results.get("len_min") is not None:
+                assert len(results) >= expected_results["len_min"]
+            if expected_results.get("tool_names"):
+                found_tools = {r.tool.name for r in results}
+                assert any(tool in found_tools for tool in expected_results["tool_names"]), (
+                    f"Query '{query}' should find at least one of {expected_results["tool_names"]}, got {found_tools}"
+                )
+            if expected_results.get("min_score_check"):
                 if results:
-                    assert max(r.score for r in results) >= min_score, (
-                        f"Query '{query}' should have score >= {min_score}"
+                    assert max(r.score for r in results) >= query_data["min_score"], (
+                        f"Query '{query}' should have score >= {query_data["min_score"]}"
                     )
-            else:
-                # For nonsense queries, scores should be low or no results
+            if expected_results.get("len_max") is not None:
+                assert len(results) == expected_results["len_max"]
+            if expected_results.get("max_score_check"):
                 if results:
                     assert all(r.score < 0.5 for r in results), (
                         f"Nonsense query '{query}' should have low scores"

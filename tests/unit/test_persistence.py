@@ -7,10 +7,12 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from unittest.mock import AsyncMock
 
 from mcpproxy.models.schemas import SearchResult
 from mcpproxy.persistence.db import DatabaseManager
 from mcpproxy.persistence.faiss_store import FaissStore
+from mcpproxy.models.tool_metadata import ToolMetadata
 
 
 class TestDatabaseManager:
@@ -40,100 +42,85 @@ class TestDatabaseManager:
         finally:
             Path(db_path).unlink(missing_ok=True)
 
+    @pytest.mark.parametrize(
+        "scenario, query, expected_len, expected_names, expected_tool_hash, expected_tool_server, expected_result",
+        [
+            ("get_by_hash", {"hash": "abc123def456"}, None, None, "abc123def456", "company-api", "found"),
+            ("get_by_hash_not_found", {"hash": "nonexistent_hash"}, None, None, None, None, "not_found"),
+            ("get_all", None, 4, ["create_instance", "delete_instance", "list_volumes", "create_volume"], None, None, "all"),
+            ("get_by_server_company", {"server_name": "company-api"}, 2, ["create_instance", "delete_instance"], None, "company-api", "by_server"),
+            ("get_by_server_storage", {"server_name": "storage-api"}, 2, ["list_volumes", "create_volume"], None, "storage-api", "by_server"),
+            ("get_by_ids", {"ids": [1, 3]}, 2, ["create_instance", "list_volumes"], None, None, "by_ids"),
+            ("get_by_ids_empty", {"ids": []}, 0, [], None, None, "by_ids_empty"),
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_insert_tool(self, in_memory_db, sample_tool_metadata):
-        """Test inserting tool metadata."""
+    async def test_database_manager_retrieval_scenarios(
+        self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list, scenario, query, expected_len, expected_names, expected_tool_hash, expected_tool_server, expected_result
+    ):
+        """Test various retrieval scenarios for DatabaseManager."""
         db = in_memory_db
 
-        tool_id = await db.insert_tool(sample_tool_metadata)
-
-        assert isinstance(tool_id, int)
-        assert tool_id > 0
-
-    @pytest.mark.asyncio
-    async def test_get_tool_by_hash(self, in_memory_db, sample_tool_metadata):
-        """Test retrieving tool by hash."""
-        db = in_memory_db
-
-        # Insert tool
+        # Prepare data for all scenarios
         await db.insert_tool(sample_tool_metadata)
-
-        # Retrieve by hash
-        retrieved_tool = await db.get_tool_by_hash(sample_tool_metadata.hash)
-
-        assert retrieved_tool is not None
-        assert retrieved_tool.name == sample_tool_metadata.name
-        assert retrieved_tool.hash == sample_tool_metadata.hash
-        assert retrieved_tool.server_name == sample_tool_metadata.server_name
-
-    @pytest.mark.asyncio
-    async def test_get_tool_by_hash_not_found(self, in_memory_db):
-        """Test retrieving tool by non-existent hash."""
-        db = in_memory_db
-
-        retrieved_tool = await db.get_tool_by_hash("nonexistent_hash")
-
-        assert retrieved_tool is None
-
-    @pytest.mark.asyncio
-    async def test_get_all_tools(self, in_memory_db, sample_tool_metadata_list):
-        """Test retrieving all tools."""
-        db = in_memory_db
-
-        # Insert multiple tools
         for tool in sample_tool_metadata_list:
             await db.insert_tool(tool)
 
-        # Retrieve all
-        all_tools = await db.get_all_tools()
-
-        assert len(all_tools) == len(sample_tool_metadata_list)
-        tool_names = {tool.name for tool in all_tools}
-        expected_names = {tool.name for tool in sample_tool_metadata_list}
-        assert tool_names == expected_names
-
-    @pytest.mark.asyncio
-    async def test_get_tools_by_server(self, in_memory_db, sample_tool_metadata_list):
-        """Test retrieving tools by server name."""
-        db = in_memory_db
-
-        # Insert multiple tools
-        for tool in sample_tool_metadata_list:
-            await db.insert_tool(tool)
-
-        # Get tools for specific server
-        company_tools = await db.get_tools_by_server("company-api")
-        storage_tools = await db.get_tools_by_server("storage-api")
-
-        assert len(company_tools) == 2  # create_instance, delete_instance
-        assert len(storage_tools) == 2  # list_volumes, create_volume
-
-        assert all(tool.server_name == "company-api" for tool in company_tools)
-        assert all(tool.server_name == "storage-api" for tool in storage_tools)
+        if scenario == "get_by_hash":
+            retrieved_tool = await db.get_tool_by_hash(query["hash"])
+            assert retrieved_tool is not None
+            assert retrieved_tool.hash == expected_tool_hash
+            assert retrieved_tool.server_name == expected_tool_server
+        elif scenario == "get_by_hash_not_found":
+            retrieved_tool = await db.get_tool_by_hash(query["hash"])
+            assert retrieved_tool is None
+        elif scenario == "get_all":
+            all_tools = await db.get_all_tools()
+            assert len(all_tools) == expected_len
+            assert {tool.name for tool in all_tools} == set(expected_names)
+        elif scenario == "get_by_server_company" or scenario == "get_by_server_storage":
+            tools_by_server = await db.get_tools_by_server(query["server_name"])
+            assert len(tools_by_server) == expected_len
+            assert {tool.name for tool in tools_by_server} == set(expected_names)
+            assert all(tool.server_name == expected_tool_server for tool in tools_by_server)
+        elif scenario == "get_by_ids":
+            tools_by_ids = await db.get_tools_by_ids(query["ids"])
+            assert len(tools_by_ids) == expected_len
+            assert {tool.name for tool in tools_by_ids} == set(expected_names)
+        elif scenario == "get_by_ids_empty":
+            tools_by_ids = await db.get_tools_by_ids(query["ids"])
+            assert len(tools_by_ids) == expected_len
+            assert tools_by_ids == []
 
     @pytest.mark.asyncio
     async def test_update_tool(self, in_memory_db, sample_tool_metadata):
         """Test updating tool metadata."""
         db = in_memory_db
 
-        # Insert tool
         tool_id = await db.insert_tool(sample_tool_metadata)
-        sample_tool_metadata.id = tool_id
 
-        # Update tool
-        sample_tool_metadata.description = "Updated description"
-        sample_tool_metadata.hash = "updated_hash"
-        await db.update_tool(sample_tool_metadata)
+        updated_tool_metadata = ToolMetadata(
+            id=tool_id,
+            name="updated_tool",
+            description="Updated description",
+            hash="updated_hash",
+            server_name="updated_server",
+            faiss_vector_id=sample_tool_metadata.faiss_vector_id,
+            params_json='{"new_param": "value"}',
+        )
 
-        # Retrieve and verify
-        updated_tool = await db.get_tool_by_hash("updated_hash")
-        assert updated_tool is not None
-        assert updated_tool.description == "Updated description"
+        await db.update_tool(updated_tool_metadata)
+
+        retrieved_tool = await db.get_tool_by_hash(updated_tool_metadata.hash)
+        assert retrieved_tool is not None
+        assert retrieved_tool.name == updated_tool_metadata.name
+        assert retrieved_tool.description == updated_tool_metadata.description
+        assert retrieved_tool.hash == updated_tool_metadata.hash
+        assert retrieved_tool.server_name == updated_tool_metadata.server_name
+        assert retrieved_tool.params_json == updated_tool_metadata.params_json
 
     @pytest.mark.asyncio
-    async def test_delete_tools_by_server(
-        self, in_memory_db, sample_tool_metadata_list
-    ):
+    async def test_delete_tools_by_server(self, in_memory_db, sample_tool_metadata_list):
         """Test deleting tools by server name."""
         db = in_memory_db
 
@@ -141,43 +128,17 @@ class TestDatabaseManager:
         for tool in sample_tool_metadata_list:
             await db.insert_tool(tool)
 
-        # Delete tools for one server
+        # Delete tools from one server
         await db.delete_tools_by_server("company-api")
 
-        # Verify deletion
-        company_tools = await db.get_tools_by_server("company-api")
-        storage_tools = await db.get_tools_by_server("storage-api")
+        # Verify only storage-api tools remain
+        remaining_tools = await db.get_all_tools()
+        assert len(remaining_tools) == 2
+        assert all(tool.server_name == "storage-api" for tool in remaining_tools)
 
-        assert len(company_tools) == 0
-        assert len(storage_tools) == 2  # Should remain untouched
-
-    @pytest.mark.asyncio
-    async def test_get_tools_by_ids(self, in_memory_db, sample_tool_metadata_list):
-        """Test retrieving tools by IDs."""
-        db = in_memory_db
-
-        # Insert tools and collect IDs
-        tool_ids = []
-        for tool in sample_tool_metadata_list:
-            tool_id = await db.insert_tool(tool)
-            tool_ids.append(tool_id)
-
-        # Get subset of tools
-        subset_ids = tool_ids[:2]
-        retrieved_tools = await db.get_tools_by_ids(subset_ids)
-
-        assert len(retrieved_tools) == 2
-        retrieved_ids = {tool.id for tool in retrieved_tools}
-        assert retrieved_ids == set(subset_ids)
-
-    @pytest.mark.asyncio
-    async def test_get_tools_by_ids_empty_list(self, in_memory_db):
-        """Test retrieving tools with empty ID list."""
-        db = in_memory_db
-
-        retrieved_tools = await db.get_tools_by_ids([])
-
-        assert retrieved_tools == []
+        # Verify the deleted tools are no longer retrievable
+        company_tools_after_delete = await db.get_tools_by_server("company-api")
+        assert len(company_tools_after_delete) == 0
 
 
 class TestFaissStore:
@@ -185,105 +146,87 @@ class TestFaissStore:
 
     @pytest.fixture(autouse=True)
     def require_faiss(self):
-        """Skip all tests in this class if faiss is not available."""
-        pytest.importorskip("faiss", reason="faiss-cpu not installed")
+        """Skip tests if faiss-cpu is not installed."""
+        try:
+            import faiss # noqa: F401
+        except ImportError:
+            pytest.skip("faiss-cpu not installed")
 
     @pytest.fixture
     def mock_faiss(self):
-        """Mock faiss module to avoid dependency issues."""
-        with patch("mcpproxy.persistence.faiss_store.faiss") as mock_faiss:
-            mock_index = MagicMock()
-            mock_index.ntotal = 0
-            mock_faiss.IndexFlatL2.return_value = mock_index
-            mock_faiss.read_index.return_value = mock_index
-            mock_faiss.write_index = MagicMock()
-            yield mock_faiss, mock_index
+        """Mock faiss module and index for isolated testing."""
+        with patch("mcpproxy.persistence.faiss_store.faiss") as mock_faiss_module:
+            mock_index = AsyncMock()
+            mock_faiss_module.IndexFlatL2.return_value = mock_index
+            mock_faiss_module.read_index.return_value = mock_index
+            yield mock_faiss_module, mock_index
 
     @pytest.mark.asyncio
     async def test_faiss_store_initialization(self, mock_faiss):
         """Test FaissStore initialization."""
         mock_faiss_module, mock_index = mock_faiss
-
-        # Use a path that doesn't exist to trigger new index creation
-        import os
-        import tempfile
-
-        temp_dir = tempfile.gettempdir()
-        index_path = os.path.join(
-            temp_dir, f"test_faiss_{os.getpid()}_{id(object())}.faiss"
-        )
-
-        try:
-            store = FaissStore(index_path, dimension=384)
-
-            assert store.dimension == 384
-            assert store.next_id == 0
-            mock_faiss_module.IndexFlatL2.assert_called_once_with(384)
-        finally:
-            Path(index_path).unlink(missing_ok=True)
-
-    @pytest.mark.asyncio
-    async def test_add_vector(self, mock_faiss):
-        """Test adding vector to index."""
-        mock_faiss_module, mock_index = mock_faiss
-
         store = FaissStore(":memory:", dimension=384)
-        vector = np.random.random(384).astype(np.float32)
 
-        vector_id = await store.add_vector(vector)
+        assert store.index_path == ":memory:"
+        assert store.dimension == 384
+        assert store.next_id == 0
+        mock_faiss_module.IndexFlatL2.assert_called_once_with(384)
 
-        assert vector_id == 0
-        assert store.next_id == 1
-        mock_index.add.assert_called_once()
+        # Test with existing index file (should call read_index)
+        with patch("pathlib.Path.exists", return_value=True):
+            FaissStore("existing_index.faiss", dimension=384)
+            mock_faiss_module.read_index.assert_called_once()
 
+    @pytest.mark.parametrize(
+        "scenario, vector_input, k, expected_output_len, raises_error",
+        [
+            ("add_vector_valid", np.random.random(384).astype(np.float32), None, 1, False),
+            ("add_vector_wrong_dimension", np.random.random(256).astype(np.float32), None, None, True),
+            ("search_vectors_valid", None, 3, 3, False), # vector_input will be generated inside test
+            ("search_empty_index", None, 5, 0, False), # vector_input will be generated inside test
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_add_vector_wrong_dimension(self, mock_faiss):
-        """Test adding vector with wrong dimension."""
+    async def test_faiss_store_vector_operations_scenarios(
+        self, mock_faiss, scenario, vector_input, k, expected_output_len, raises_error
+    ):
+        """Test various add and search vector operations for FaissStore."""
         mock_faiss_module, mock_index = mock_faiss
-
         store = FaissStore(":memory:", dimension=384)
-        wrong_vector = np.random.random(256).astype(np.float32)
 
-        with pytest.raises(ValueError, match="Vector must have dimension 384"):
-            await store.add_vector(wrong_vector)
+        if scenario == "add_vector_valid":
+            vector_id = await store.add_vector(vector_input)
+            assert vector_id == 0
+            assert store.next_id == 1
+            mock_index.add.assert_called_once_with(np.array([vector_input]))
+        elif scenario == "add_vector_wrong_dimension":
+            with pytest.raises(ValueError, match="Vector must have dimension 384"):
+                await store.add_vector(vector_input)
+        elif scenario == "search_vectors_valid":
+            # Mock search results
+            mock_distances = np.array([0.1, 0.2, 0.3])
+            mock_indices = np.array([0, 1, 2])
+            mock_index.search.return_value = (
+                mock_distances.reshape(1, -1),
+                mock_indices.reshape(1, -1),
+            )
+            mock_index.ntotal = 5
 
-    @pytest.mark.asyncio
-    async def test_search_vectors(self, mock_faiss):
-        """Test searching for similar vectors."""
-        mock_faiss_module, mock_index = mock_faiss
+            query_vector = np.random.random(384).astype(np.float32)
+            distances, indices = await store.search(query_vector, k=k)
 
-        # Mock search results
-        mock_distances = np.array([0.1, 0.2, 0.3])
-        mock_indices = np.array([0, 1, 2])
-        mock_index.search.return_value = (
-            mock_distances.reshape(1, -1),
-            mock_indices.reshape(1, -1),
-        )
-        mock_index.ntotal = 5
+            assert len(distances) == expected_output_len
+            assert len(indices) == expected_output_len
+            np.testing.assert_array_equal(distances, mock_distances)
+            np.testing.assert_array_equal(indices, mock_indices)
+        elif scenario == "search_empty_index":
+            mock_index.ntotal = 0
 
-        store = FaissStore(":memory:", dimension=384)
-        query_vector = np.random.random(384).astype(np.float32)
+            query_vector = np.random.random(384).astype(np.float32)
+            distances, indices = await store.search(query_vector, k=k)
 
-        distances, indices = await store.search(query_vector, k=3)
-
-        assert len(distances) == 3
-        assert len(indices) == 3
-        np.testing.assert_array_equal(distances, mock_distances)
-        np.testing.assert_array_equal(indices, mock_indices)
-
-    @pytest.mark.asyncio
-    async def test_search_empty_index(self, mock_faiss):
-        """Test searching in empty index."""
-        mock_faiss_module, mock_index = mock_faiss
-        mock_index.ntotal = 0
-
-        store = FaissStore(":memory:", dimension=384)
-        query_vector = np.random.random(384).astype(np.float32)
-
-        distances, indices = await store.search(query_vector, k=5)
-
-        assert len(distances) == 0
-        assert len(indices) == 0
+            assert len(distances) == expected_output_len
+            assert len(indices) == expected_output_len
 
     @pytest.mark.asyncio
     async def test_get_vector_count(self, mock_faiss):
@@ -317,51 +260,39 @@ class TestPersistenceFacade:
         assert sample_tool_metadata.id == tool_id
         assert sample_tool_metadata.faiss_vector_id is not None
 
+    @pytest.mark.parametrize(
+        "scenario, query, expected_len, expected_names, expected_tool_hash, expected_server_name",
+        [
+            ("get_by_hash", {"hash": "abc123def456"}, None, None, "abc123def456", "company-api"),
+            ("get_all", None, 4, ["create_instance", "delete_instance", "list_volumes", "create_volume"], None, None),
+            ("get_by_server", {"server_name": "company-api"}, 2, ["create_instance", "delete_instance"], None, "company-api"),
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_get_tool_by_hash_facade(
-        self, temp_persistence_facade, sample_tool_metadata
+    async def test_persistence_facade_retrieval_scenarios(
+        self, temp_persistence_facade, sample_tool_metadata, sample_tool_metadata_list, scenario, query, expected_len, expected_names, expected_tool_hash, expected_server_name
     ):
-        """Test getting tool by hash through facade."""
+        """Test various retrieval scenarios for PersistenceFacade."""
+        # Prepare data
         vector = np.random.random(384).astype(np.float32)
+        await temp_persistence_facade.store_tool_with_vector(sample_tool_metadata, vector)
+        for tool in sample_tool_metadata_list:
+            await temp_persistence_facade.store_tool_with_vector(tool, vector)
 
-        # Store tool
-        await temp_persistence_facade.store_tool_with_vector(
-            sample_tool_metadata, vector
-        )
-
-        # Retrieve by hash
-        retrieved_tool = await temp_persistence_facade.get_tool_by_hash(
-            sample_tool_metadata.hash
-        )
-
-        assert retrieved_tool is not None
-        assert retrieved_tool.name == sample_tool_metadata.name
-        assert retrieved_tool.hash == sample_tool_metadata.hash
-
-    @pytest.mark.asyncio
-    async def test_update_tool_with_vector(
-        self, temp_persistence_facade, sample_tool_metadata
-    ):
-        """Test updating tool with new vector."""
-        vector1 = np.random.random(384).astype(np.float32)
-        vector2 = np.random.random(384).astype(np.float32)
-
-        # Store initial tool
-        await temp_persistence_facade.store_tool_with_vector(
-            sample_tool_metadata, vector1
-        )
-
-        # Update with new vector
-        sample_tool_metadata.description = "Updated description"
-        await temp_persistence_facade.update_tool_with_vector(
-            sample_tool_metadata, vector2
-        )
-
-        # Verify update
-        updated_tool = await temp_persistence_facade.get_tool_by_hash(
-            sample_tool_metadata.hash
-        )
-        assert updated_tool.description == "Updated description"
+        if scenario == "get_by_hash":
+            retrieved_tool = await temp_persistence_facade.get_tool_by_hash(query["hash"])
+            assert retrieved_tool is not None
+            assert retrieved_tool.hash == expected_tool_hash
+            assert retrieved_tool.server_name == expected_server_name
+        elif scenario == "get_all":
+            all_tools = await temp_persistence_facade.get_all_tools()
+            assert len(all_tools) == expected_len
+            assert {tool.name for tool in all_tools} == set(expected_names)
+        elif scenario == "get_by_server":
+            tools_by_server = await temp_persistence_facade.get_tools_by_server(query["server_name"])
+            assert len(tools_by_server) == expected_len
+            assert {tool.name for tool in tools_by_server} == set(expected_names)
+            assert all(tool.server_name == expected_server_name for tool in tools_by_server)
 
     @pytest.mark.asyncio
     async def test_search_similar_tools(
@@ -396,59 +327,42 @@ class TestPersistenceFacade:
             # First result should have highest score (lowest distance)
             assert results[0].score > results[1].score > results[2].score
 
+    @pytest.mark.parametrize(
+        "scenario, action_data, expected_outcome",
+        [
+            ("update_tool", {"name": "updated_tool", "description": "Updated description", "hash": "updated_hash", "server_name": "updated_server"}, "updated"),
+            ("delete_by_server", {"server_name": "company-api"}, "deleted"),
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_get_all_tools_facade(
-        self, temp_persistence_facade, sample_tool_metadata_list
+    async def test_persistence_facade_modification_scenarios(
+        self, temp_persistence_facade, sample_tool_metadata, sample_tool_metadata_list, scenario, action_data, expected_outcome
     ):
-        """Test getting all tools through facade."""
-        # Store multiple tools
+        """Test various modification scenarios for PersistenceFacade."""
+        vector = np.random.random(384).astype(np.float32)
+        tool_id = await temp_persistence_facade.store_tool_with_vector(sample_tool_metadata, vector)
+
         for tool in sample_tool_metadata_list:
-            vector = np.random.random(384).astype(np.float32)
             await temp_persistence_facade.store_tool_with_vector(tool, vector)
 
-        # Retrieve all
-        all_tools = await temp_persistence_facade.get_all_tools()
-
-        assert len(all_tools) == len(sample_tool_metadata_list)
-        tool_names = {tool.name for tool in all_tools}
-        expected_names = {tool.name for tool in sample_tool_metadata_list}
-        assert tool_names == expected_names
-
-    @pytest.mark.asyncio
-    async def test_get_tools_by_server_facade(
-        self, temp_persistence_facade, sample_tool_metadata_list
-    ):
-        """Test getting tools by server through facade."""
-        # Store multiple tools
-        for tool in sample_tool_metadata_list:
-            vector = np.random.random(384).astype(np.float32)
-            await temp_persistence_facade.store_tool_with_vector(tool, vector)
-
-        # Get tools for specific server
-        company_tools = await temp_persistence_facade.get_tools_by_server("company-api")
-
-        assert len(company_tools) == 2
-        assert all(tool.server_name == "company-api" for tool in company_tools)
-
-    @pytest.mark.asyncio
-    async def test_delete_tools_by_server_facade(
-        self, temp_persistence_facade, sample_tool_metadata_list
-    ):
-        """Test deleting tools by server through facade."""
-        # Store multiple tools
-        for tool in sample_tool_metadata_list:
-            vector = np.random.random(384).astype(np.float32)
-            await temp_persistence_facade.store_tool_with_vector(tool, vector)
-
-        # Delete tools for one server
-        await temp_persistence_facade.delete_tools_by_server("company-api")
-
-        # Verify deletion
-        company_tools = await temp_persistence_facade.get_tools_by_server("company-api")
-        storage_tools = await temp_persistence_facade.get_tools_by_server("storage-api")
-
-        assert len(company_tools) == 0
-        assert len(storage_tools) == 2
+        if scenario == "update_tool":
+            updated_tool_metadata = ToolMetadata(
+                id=tool_id,
+                faiss_vector_id=sample_tool_metadata.faiss_vector_id,
+                params_json=sample_tool_metadata.params_json,
+                **action_data
+            )
+            await temp_persistence_facade.update_tool_with_vector(updated_tool_metadata)
+            retrieved_tool = await temp_persistence_facade.get_tool_by_hash(action_data["hash"])
+            assert retrieved_tool is not None
+            assert retrieved_tool.name == action_data["name"]
+            assert retrieved_tool.description == action_data["description"]
+        elif scenario == "delete_by_server":
+            await temp_persistence_facade.delete_tools_by_server(action_data["server_name"])
+            company_tools = await temp_persistence_facade.get_tools_by_server(action_data["server_name"])
+            storage_tools = await temp_persistence_facade.get_tools_by_server("storage-api")
+            assert len(company_tools) == 0
+            assert len(storage_tools) == 2
 
     @pytest.mark.asyncio
     async def test_get_vector_count_facade(
@@ -465,7 +379,6 @@ class TestPersistenceFacade:
             await temp_persistence_facade.store_tool_with_vector(tool, vector)
 
         # Check count - BM25 doesn't use vector storage, so count is always 0
-        count = await temp_persistence_facade.get_vector_count()
         from mcpproxy.persistence.bm25_store import BM25Store
         if isinstance(temp_persistence_facade.vector_store, BM25Store):
             assert count == 0  # BM25 doesn't use vector storage

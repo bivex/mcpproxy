@@ -7,6 +7,7 @@ from pathlib import Path
 from ..logging import get_logger
 from ..models.schemas import EmbedderType, ProxyConfig, ServerConfig
 from ..utils.dependencies import resolve_env_vars
+from .config_file_handler import ConfigFileHandler
 
 TOP_K_DEFAULT = 5  # Default number of top results for search
 
@@ -19,16 +20,16 @@ class ConfigLoader:
             self.config_path = Path.home() / ".cursor" / "mcp_proxy.json"
         else:
             self.config_path = Path(config_path)
+        self.file_handler = ConfigFileHandler(self.config_path)
 
     def load_config(self) -> ProxyConfig:
         """Load configuration from JSON file and environment variables."""
-        if not self.config_path.exists():
+        if not self.file_handler.file_exists():
             logger = get_logger()
             logger.warning(f"Configuration file not found: {self.config_path}. Returning default configuration.")
             return ProxyConfig(mcp_servers={}, embedder=EmbedderType.BM25, hf_model=None, top_k=TOP_K_DEFAULT, tool_name_limit=60)
 
-        with open(self.config_path) as f:
-            config_data = json.load(f)
+        config_data = self.file_handler.read_config_file()
 
         # Parse server configurations
         mcp_servers = {}
@@ -48,25 +49,3 @@ class ConfigLoader:
             top_k=top_k,
             tool_name_limit=tool_name_limit,
         )
-
-    def create_sample_config(self, output_path: str | None = None) -> None:
-        """Create a sample configuration file."""
-        if output_path is None:
-            output_path = str(Path.home() / ".cursor" / "mcp_proxy.json")
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-        sample_config = {
-            "mcpServers": {
-                "core-docs": {"url": "http://localhost:8000/sse"},
-            }
-        }
-
-        with open(output_path, "w") as f:
-            json.dump(sample_config, f, indent=2)
-
-        logger = get_logger()
-        logger.info(f"Sample configuration created at {output_path}")
-        logger.info("Set environment variables:")
-        logger.info("  MCPPROXY_EMBEDDER=BM25|HF|OPENAI")
-        logger.info("  MCPPROXY_HF_MODEL=sentence-transformers/all-MiniLM-L6-v2")
-        logger.info("  MCPPROXY_TOOL_NAME_LIMIT=60  # Maximum tool name length")

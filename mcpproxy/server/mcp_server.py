@@ -142,8 +142,9 @@ class SmartMCPProxyServer:
             logger.warning(f"Configuration file not found: {config_path}")
             logger.info("Creating sample configuration...")
 
-            config_loader = ConfigLoader()
-            config_loader.create_sample_config(config_path)
+            # Use the config_loader's file_handler to create sample config
+            # config_loader = ConfigLoader() # No longer needed, use existing self.config_loader
+            self.config_loader.file_handler.create_sample_config()
 
             logger.info(
                 f"Please edit {config_path} and set required environment variables"
