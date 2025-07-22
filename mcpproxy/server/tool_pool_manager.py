@@ -167,7 +167,7 @@ class ToolPoolManager:
             if not proxy_server:
                 return json.dumps({"error": f"Server '{matching_tool.server_name}' not available"})
             
-            return await self._execute_and_format_tool_output(name, args, matching_tool, proxy_server)
+            return await self._exec_and_format_output(name, args, matching_tool, proxy_server)
 
         except Exception as e:
             logger.error(f"Error executing tool '{name}': {e}")
@@ -191,7 +191,7 @@ class ToolPoolManager:
     def _get_proxy_server(self, server_name: str) -> FastMCP | None:
         return self.proxy_servers.get(server_name)
 
-    async def _execute_and_format_tool_output(self, name: str, args: dict[str, Any], matching_tool: ToolMetadata, proxy_server: FastMCP) -> str:
+    async def _exec_and_format_output(self, name: str, args: dict[str, Any], matching_tool: ToolMetadata, proxy_server: FastMCP) -> str:
         logger = get_logger()
         original_tool_name = matching_tool.name
         server_name = matching_tool.server_name

@@ -146,7 +146,7 @@ class TestToolPoolManagement:
         server.tool_pool_manager._enforce_tool_pool_limit.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_freshness_update_existing_tools(
+    async def test_freshness_update(
         self, mock_server_with_indexer
     ):
         """Test that existing tools get freshness updates."""
@@ -219,7 +219,7 @@ class TestToolPoolManagement:
         assert metadata["original_score"] == 0.6  # Should preserve original
 
     @pytest.mark.asyncio
-    async def test_no_eviction_when_under_limit(
+    async def test_no_eviction_under_limit(
         self, mock_server_with_indexer
     ):
         """Test that no eviction occurs when under the pool limit."""

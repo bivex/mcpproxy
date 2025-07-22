@@ -124,7 +124,7 @@ class TestBaseEmbedder:
             ("Test description", {"type": "object", "properties": {"items": {"type": "array", "items": {"type": "integer"}}}}, ["items (array)"]), # Array items
         ],
     )
-    def test_combine_tool_text_scenarios(self, description: str, params: Any, expected_contains: list[str]):
+    def test_combine_tool_text(self, description: str, params: Any, expected_contains: list[str]):
         """Test various scenarios for tool text combination."""
         embedder = MockEmbedder()
         result = embedder.combine_tool_text("test_tool", description, params)
