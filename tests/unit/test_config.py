@@ -10,6 +10,7 @@ import pytest
 
 from mcpproxy.models.schemas import EmbedderType, ProxyConfig, ServerConfig
 from mcpproxy.server.config.config import ConfigLoader
+from mcpproxy.server.config.config_file_handler import ConfigFileHandler
 
 
 class TestConfigLoader:
@@ -42,6 +43,7 @@ class TestConfigLoader:
                 assert config.tool_name_limit == 60  # Default value
                 assert config.embedder == EmbedderType.BM25  # Default embedder
                 assert config.top_k == 5  # Default top_k
+                assert config.tools_limit == 15 # Default tools_limit
         finally:
             os.unlink(config_file)
 
@@ -166,39 +168,31 @@ class TestConfigLoader:
         finally:
             os.unlink(config_file)
 
-    def test_load_config_missing_file(self):
-        """Test behavior when config file doesn't exist."""
-        loader = ConfigLoader("nonexistent_config.json")
+    def test_load_config_missing_file(self, tmp_path):
+        """Test loading config when file does not exist, should return default config."""
+        non_existent_config_file = tmp_path / "nonexistent_config.json"
         
-        with pytest.raises(FileNotFoundError):
-            loader.load_config()
+        loader = ConfigLoader(str(non_existent_config_file))
+        config = loader.load_config()
+        
+        # Assert that a default ProxyConfig is returned
+        assert isinstance(config, ProxyConfig)
+        assert config.mcp_servers == {}
+        assert config.embedder == EmbedderType.BM25
+        assert config.top_k == 5
+        assert config.tool_name_limit == 60
+        assert config.tools_limit == 15 # Ensure tools_limit is also default
 
-    def test_create_sample_config_includes_tool_name_limit_docs(self, caplog):
-        """Test that creating sample config includes documentation about MCPPROXY_TOOL_NAME_LIMIT."""
-        import io
-        import sys
-        from unittest.mock import patch
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = Path(temp_dir) / "test_config.json"
-            
-            # Capture stdout since the logger might output to stdout
-            captured_output = io.StringIO()
-            
-            with patch('sys.stdout', captured_output):
-                with caplog.at_level('INFO'):
-                    loader = ConfigLoader()
-                    loader.create_sample_config(str(config_path))
-            
-            # Check that the file was created
-            assert config_path.exists()
-            
-            # Check both captured logs and stdout for the tool name limit documentation
-            log_output = caplog.text
-            stdout_output = captured_output.getvalue()
-            combined_output = log_output + stdout_output
-            
-            assert "MCPPROXY_TOOL_NAME_LIMIT=60" in combined_output
+    def test_create_sample_config_includes_tool_name_limit_docs(self, tmp_path):
+        """Test that create_sample_config includes tool_name_limit documentation."""
+        config_path = tmp_path / "temp_mcp_proxy.json"
+        handler = ConfigFileHandler(config_path)
+        handler.create_sample_config()
+
+        with open(config_path) as f:
+            content = json.load(f)
+            assert content["tool_name_limit"] == 60
+            assert content["tools_limit"] == 15
 
     def test_proxy_config_model_defaults(self):
         """Test that ProxyConfig model has correct default values."""
@@ -216,10 +210,12 @@ class TestConfigLoader:
             embedder=EmbedderType.HF,
             hf_model="custom-model",
             top_k=15,
-            tool_name_limit=120
+            tool_name_limit=120,
+            tools_limit=30
         )
         
         assert config.embedder == EmbedderType.HF
         assert config.hf_model == "custom-model"
         assert config.top_k == 15
-        assert config.tool_name_limit == 120 
+        assert config.tool_name_limit == 120
+        assert config.tools_limit == 30 

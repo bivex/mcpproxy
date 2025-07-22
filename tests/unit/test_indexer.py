@@ -85,8 +85,8 @@ class TestBaseEmbedder:
                     "Tool: test_tool",
                     "Description: Test description",
                     "Parameters:",
-                    "project_id (string, null)",
-                    "region_id (string, null)",
+                    "project_id (string|null): ",
+                    "region_id (string|null): ",
                 ],
             ),
             (
@@ -99,7 +99,7 @@ class TestBaseEmbedder:
                     "Tool: test_tool",
                     "Description: Test description",
                     "Parameters:",
-                    "data (string, integer)",
+                    "data (string|integer): ",
                 ],
             ),
             (

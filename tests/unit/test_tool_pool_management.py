@@ -11,6 +11,7 @@ from mcpproxy.server.config.config import ProxyConfig
 from mcpproxy.server.server_discovery_manager import ServerDiscoveryManager
 from mcpproxy.server.mcp_server import SmartMCPProxyServer
 from mcpproxy.utils.tool_scoring.tool_weight_calculator import calculate_tool_weight
+from mcpproxy.server.tool_pool_manager import ToolPoolManager
 
 
 class TestToolPoolManagerUnit:

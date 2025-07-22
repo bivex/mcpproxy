@@ -29,7 +29,9 @@ class ConfigFileHandler:
         sample_config = {
             "mcpServers": {
                 "core-docs": {"url": "http://localhost:8000/sse"},
-            }
+            },
+            "tool_name_limit": 60,
+            "tools_limit": 15,
         }
 
         with open(self.config_path, "w") as f:
@@ -40,4 +42,5 @@ class ConfigFileHandler:
         logger.info("Set environment variables:")
         logger.info("  MCPPROXY_EMBEDDER=BM25|HF|OPENAI")
         logger.info("  MCPPROXY_HF_MODEL=sentence-transformers/all-MiniLM-L6-v2")
-        logger.info("  MCPPROXY_TOOL_NAME_LIMIT=60  # Maximum tool name length") 
+        logger.info("  MCPPROXY_TOOL_NAME_LIMIT=60  # Maximum tool name length")
+        logger.info("  MCPPROXY_TOOLS_LIMIT=15  # Maximum number of tools in active pool") 
