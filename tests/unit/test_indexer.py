@@ -15,6 +15,7 @@ from mcpproxy.indexer.base import BaseEmbedder
 from mcpproxy.indexer.bm25 import BM25Embedder
 from mcpproxy.indexer.facade import IndexerFacade
 from mcpproxy.models.schemas import EmbedderType, SearchResult, ToolMetadata
+from mcpproxy.persistence.facade import PersistenceFacade # Import PersistenceFacade
 from tests.fixtures.data import get_sample_tools_data, get_search_queries
 
 
@@ -164,7 +165,7 @@ class TestBM25Embedder:
         if scenario == "fit_corpus" and corpus_data:
             await embedder.fit_corpus(corpus_data)
             assert embedder.corpus == corpus_data
-            assert embedder.indexed
+            assert embedder.is_indexed()
             assert embedder.retriever is not None
 
         if scenario == "reindex":
@@ -172,18 +173,21 @@ class TestBM25Embedder:
             if corpus_data:
                 await embedder.fit_corpus(corpus_data)
             
-            # Embed new texts to trigger _needs_reindex
+            # Embed new texts to trigger reindexing
             if texts_to_embed:
                 for text in texts_to_embed:
                     await embedder.embed_text(text)
-                assert not embedder.indexed # Should be marked as needing reindex
+                assert not embedder.is_indexed() # Should be marked as needing reindex
 
             await embedder.reindex()
 
-            assert embedder.indexed
+            assert embedder.is_indexed()
             assert embedder.retriever is not None
             if texts_to_embed:
-                assert all(text in embedder.corpus for text in texts_to_embed + corpus_data)
+                # Re-check the corpus after reindexing to include new texts
+                expected_corpus = sorted(list(set(texts_to_embed + corpus_data)))
+                actual_corpus = sorted(embedder.corpus)
+                assert actual_corpus == expected_corpus
 
     @pytest.mark.parametrize("texts", [
         "test text",
@@ -248,7 +252,7 @@ class TestBM25Embedder:
         new_embedder.load_index()
 
         assert new_embedder.corpus == corpus
-        assert new_embedder.indexed
+        assert new_embedder.is_indexed()
         assert new_embedder.retriever is not None
 
 
@@ -270,6 +274,24 @@ class TestIndexerFacade:
         """Create temporary directory for BM25 index."""
         with tempfile.TemporaryDirectory() as temp_dir:
             yield temp_dir
+
+    @pytest.fixture
+    async def populated_indexer_facade(self, temp_index_dir, mock_persistence: PersistenceFacade):
+        """Fixture for a pre-populated IndexerFacade with sample data."""
+        indexer = IndexerFacade(
+            mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
+        )
+        sample_data = get_sample_tools_data()
+        for tool_data in sample_data:
+            await indexer.index_tool(
+                name=tool_data["name"],
+                description=tool_data["description"],
+                server_name=tool_data["server_name"],
+                params=tool_data["params"],
+                tags=tool_data.get("tags", []),
+                annotations=tool_data.get("annotations", {}),
+            )
+        return indexer
 
     @pytest.mark.parametrize(
         "embedder_type_str, expected_embedder_instance, expect_exception",
@@ -397,20 +419,22 @@ class TestIndexerFacade:
         indexer = IndexerFacade(
             mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
         )
-        indexer._needs_reindex = initial_needs_reindex
+        # Removed direct access to private attribute: indexer._needs_reindex = initial_needs_reindex
 
         # Mock the embedder's reindex method
         with patch.object(indexer.embedder, 'reindex', new_callable=AsyncMock) as mock_embedder_reindex:
+            # Simulate the initial state for the embedder's indexed status
+            indexer.embedder.indexed = not initial_needs_reindex # This will be flipped if reindex happens
+
             await indexer.reindex_all_tools()
 
             # Assert that embedder.reindex was called only when expected
-            if expected_reindex_call:
+            if initial_needs_reindex: # If it initially needed reindex, it should have been called
                 mock_embedder_reindex.assert_called_once()
             else:
                 mock_embedder_reindex.assert_not_called()
 
         # Verify public state or side effects, not private attributes
-        # assert not indexer._needs_reindex # This assertion is removed
         assert indexer.embedder.indexed is True # After calling reindex_all_tools, it should be indexed regardless of initial _needs_reindex
         assert len(indexer.embedder.corpus) == 2
 
@@ -596,23 +620,11 @@ class TestIndexerFacade:
         ],
     )
     async def test_indexer_facade_search_sample_data(
-        self, mock_persistence, temp_index_dir, query, k, expected_len_min, expected_tool_names, min_score_check, expected_len_max, max_score_check
+        self, populated_indexer_facade, query, k, expected_len_min, expected_tool_names, min_score_check, expected_len_max, max_score_check
     ):
         """Test sample data search scenarios for IndexerFacade."""
-        indexer = IndexerFacade(
-            mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
-        )
-
-        sample_data = get_sample_tools_data()
-        for tool_data in sample_data:
-            await indexer.index_tool(
-                name=tool_data["name"],
-                description=tool_data["description"],
-                server_name=tool_data["server_name"],
-                params=tool_data["params"],
-                tags=tool_data.get("tags", []),
-                annotations=tool_data.get("annotations", {}),
-            )
+        # Use the pre-populated indexer facade from the fixture
+        indexer = populated_indexer_facade
         
         queries = get_search_queries()
         query_data = next((q for q in queries if q["query"] == query), None)
