@@ -168,7 +168,7 @@ class IndexerFacade:
 
     async def reindex_all_tools(self) -> None:
         """Reindex all tools in the system. This is a costly operation."""
-        self.embedder.clear_index()
+        self.embedder.reset_index() # Use reset_index for BM25Embedder
         all_tools = await self.persistence.get_all_tools()
         if isinstance(self.embedder, BM25Embedder):
             corpus = [
