@@ -4,12 +4,13 @@ import os
 import tempfile
 from enum import Enum
 from unittest.mock import AsyncMock, patch
-from typing import Any
+from typing import Any, Optional, Union
 
 import numpy as np
 import pytest
 import json
 from unittest.mock import MagicMock
+from dataclasses import dataclass, field
 
 from mcpproxy.indexer.embedders.base import BaseEmbedder
 from mcpproxy.indexer.embedders.bm25 import BM25Embedder
@@ -290,6 +291,19 @@ class TestBM25Embedder:
         assert new_embedder.corpus == corpus
         assert new_embedder.is_indexed()
         assert new_embedder.retriever is not None
+
+
+@dataclass
+class SearchResultExpectations:
+    expected_len_min: Optional[int] = None
+    expected_tool_names: Optional[list[str]] = None
+    min_score_check: bool = False
+    expected_len_max: Optional[int] = None
+    max_score_check: bool = False
+
+    def __post_init__(self):
+        if self.expected_len_min is None and self.expected_len_max is None and not self.min_score_check and not self.max_score_check:
+            raise ValueError("At least one expectation must be provided.")
 
 
 class TestIndexerFacade:
@@ -727,13 +741,20 @@ class TestIndexerFacade:
         indexer = populated_indexer_facade
         
         results = await indexer.search_tools(query, k=k)
-        self._assert_search_results(results, query, expected_len_min, expected_tool_names, min_score_check, expected_len_max, max_score_check)
+        expectations = SearchResultExpectations(
+            expected_len_min=expected_len_min,
+            expected_tool_names=expected_tool_names,
+            min_score_check=min_score_check,
+            expected_len_max=expected_len_max,
+            max_score_check=max_score_check
+        )
+        self._assert_search_results(results, query, expectations)
 
-    def _assert_search_results(self, results, query, expected_len_min, expected_tool_names, min_score_check, expected_len_max, max_score_check):
-        self._assert_length_expectations(results, expected_len_min, expected_len_max)
-        self._assert_tool_names_found(results, query, expected_tool_names)
-        self._assert_min_score_criteria(results, query, min_score_check)
-        self._assert_max_score_criteria(results, query, max_score_check)
+    def _assert_search_results(self, results, query, expectations: SearchResultExpectations):
+        self._assert_length_expectations(results, expectations.expected_len_min, expectations.expected_len_max)
+        self._assert_tool_names_found(results, query, expectations.expected_tool_names)
+        self._assert_min_score_criteria(results, query, expectations.min_score_check)
+        self._assert_max_score_criteria(results, query, expectations.max_score_check)
 
     def _assert_length_expectations(self, results, expected_len_min, expected_len_max):
         if expected_len_min is not None:

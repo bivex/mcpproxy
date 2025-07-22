@@ -2,6 +2,7 @@
 
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
+from dataclasses import dataclass, field
 
 import pytest
 
@@ -12,6 +13,15 @@ from mcpproxy.server.server_discovery_manager import ServerDiscoveryManager
 from mcpproxy.server.mcp_server import SmartMCPProxyServer
 from mcpproxy.utils.tool_scoring.tool_weight_calculator import calculate_tool_weight
 from mcpproxy.server.tool_pool_manager import ToolPoolManager
+
+
+@dataclass
+class PoolLimitScenario:
+    initial_tools_metadata: dict[str, dict]
+    new_tools_info: list[tuple[str, float]]
+    expected_evicted_count: int
+    expected_evicted_names: list[str]
+    expected_registered_count: int
 
 
 class TestToolPoolManagerUnit:
@@ -141,30 +151,36 @@ class TestToolPoolManagerUnit:
         assert abs(weight - expected) < expected_weight_tolerance
 
     @pytest.mark.parametrize(
-        "initial_tools_metadata, new_tools_info, expected_evicted_count, expected_evicted_names, expected_registered_count",
+        "scenario",
         [
-            ({}, [("new_tool", 0.8)], 0, [], 1), # Add one tool, under limit
-            (
-                {
+            PoolLimitScenario(
+                initial_tools_metadata={},
+                new_tools_info=[("new_tool", 0.8)],
+                expected_evicted_count=0,
+                expected_evicted_names=[],
+                expected_registered_count=1
+            ), # Add one tool, under limit
+            PoolLimitScenario(
+                initial_tools_metadata={
                     "tool1": {"timestamp": time.time() - 1800, "score": 0.5}, # Old, low score
                     "tool2": {"timestamp": time.time() - 900, "score": 0.9}, # Medium age, high score
                     "tool3": {"timestamp": time.time(), "score": 0.7}, # Fresh, medium score
                 },
-                [("new_tool1", 0.8), ("new_tool2", 0.6)], # Add two new tools, exceeding limit of 3
-                2, # Expect 2 evictions
-                ["tool1", "tool3"], # tool1 and tool3 should be evicted based on scores/freshness
-                3 # tool2 + new_tool1 + new_tool2
+                new_tools_info=[("new_tool1", 0.8), ("new_tool2", 0.6)], # Add two new tools, exceeding limit of 3
+                expected_evicted_count=2, # Expect 2 evictions
+                expected_evicted_names=["tool1", "tool3"], # tool1 and tool3 should be evicted based on scores/freshness
+                expected_registered_count=3 # tool2 + new_tool1 + new_tool2
             ),
-            (
-                {
+            PoolLimitScenario(
+                initial_tools_metadata={
                     "tool1": {"timestamp": time.time() - 1800, "score": 0.5}, 
                     "tool2": {"timestamp": time.time() - 1800, "score": 0.4}, 
                     "tool3": {"timestamp": time.time() - 1800, "score": 0.6}, 
                 },
-                [("new_tool", 0.9)], # Add one new tool, evict one oldest/lowest score
-                1, 
-                ["tool2"], 
-                3
+                new_tools_info=[("new_tool", 0.9)], # Add one new tool, evict one oldest/lowest score
+                expected_evicted_count=1, 
+                expected_evicted_names=["tool2"], 
+                expected_registered_count=3
             ),           
         ]
     )
@@ -172,22 +188,18 @@ class TestToolPoolManagerUnit:
     async def test_enforce_pool_limit_scenarios(
         self,
         mock_tool_pool_manager,
-        initial_tools_metadata,
-        new_tools_info,
-        expected_evicted_count,
-        expected_evicted_names,
-        expected_registered_count
+        scenario: PoolLimitScenario
     ):
         """Test tool pool limit enforcement and eviction scenarios."""
         manager = mock_tool_pool_manager
 
-        self._setup_pool_manager_initial_state(manager, initial_tools_metadata)
-        self._prepare_mock_search_results(manager, new_tools_info)
+        self._setup_pool_manager_initial_state(manager, scenario.initial_tools_metadata)
+        self._prepare_mock_search_results(manager, scenario.new_tools_info)
 
         # Call the public method that triggers the logic
         await manager.retrieve_tools("some query")
 
-        self._assert_pool_limit_enforcement(manager, expected_evicted_count, expected_evicted_names, expected_registered_count)
+        self._assert_pool_limit_enforcement(manager, scenario.expected_evicted_count, scenario.expected_evicted_names, scenario.expected_registered_count)
 
     def _setup_pool_manager_initial_state(self, manager, initial_tools_metadata):
         manager.current_tool_registrations = {name: MagicMock() for name in initial_tools_metadata}
