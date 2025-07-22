@@ -730,23 +730,34 @@ class TestIndexerFacade:
         self._assert_search_results(results, query, expected_len_min, expected_tool_names, min_score_check, expected_len_max, max_score_check)
 
     def _assert_search_results(self, results, query, expected_len_min, expected_tool_names, min_score_check, expected_len_max, max_score_check):
-        queries = get_search_queries()
-        query_data = next((q for q in queries if q["query"] == query), None)
+        self._assert_length_expectations(results, expected_len_min, expected_len_max)
+        self._assert_tool_names_found(results, query, expected_tool_names)
+        self._assert_min_score_criteria(results, query, min_score_check)
+        self._assert_max_score_criteria(results, query, max_score_check)
 
+    def _assert_length_expectations(self, results, expected_len_min, expected_len_max):
         if expected_len_min is not None:
             assert len(results) >= expected_len_min
+        if expected_len_max is not None:
+            assert len(results) == expected_len_max
+
+    def _assert_tool_names_found(self, results, query, expected_tool_names):
         if expected_tool_names:
             found_tools = {r.tool.name for r in results}
             assert any(tool in found_tools for tool in expected_tool_names), (
                 f"Query '{query}' should find at least one of {expected_tool_names}, got {found_tools}"
             )
+
+    def _assert_min_score_criteria(self, results, query, min_score_check):
         if min_score_check:
+            queries = get_search_queries()
+            query_data = next((q for q in queries if q["query"] == query), None)
             if results and query_data:
                 assert max(r.score for r in results) >= query_data["min_score"], (
                     f"Query '{query}' should have score >= {query_data["min_score"]}"
                 )
-        if expected_len_max is not None:
-            assert len(results) == expected_len_max
+
+    def _assert_max_score_criteria(self, results, query, max_score_check):
         if max_score_check:
             if results:
                 assert all(r.score < 0.5 for r in results), (
