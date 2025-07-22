@@ -53,34 +53,12 @@ class ToolPoolManager:
             if not self.indexer:
                 return json.dumps({"error": "Indexer not initialized"})
 
-            results = await self.indexer.search_tools(query, self.config.top_k) # Use self.config.top_k
+            results = await self.indexer.search_tools(query, self.config.top_k)
 
             if not results:
                 return json.dumps({"message": "No relevant tools found", "tools": []})
 
-            # This ToolPoolManager is always for DYNAMIC routing as per original mcp_server.py logic for retrieve_tools
-            tools_to_register = []
-            for result in results:
-                tool_name = sanitize_tool_name(
-                    result.tool.server_name, result.tool.name, self.config.tool_name_limit # Use self.config.tool_name_limit
-                )
-
-                if tool_name in self.current_tool_registrations:
-                    if tool_name in self.tool_pool_metadata:
-                        self.tool_pool_metadata[tool_name]["timestamp"] = time.time()
-                        self.tool_pool_metadata[tool_name]["score"] = max(
-                            self.tool_pool_metadata[tool_name]["score"],
-                            result.score,
-                        )
-                    continue
-
-                if tool_name in self.proxified_tools:
-                    actual_tool = self.proxified_tools[tool_name]
-                    tools_to_register.append((tool_name, actual_tool, result.score))
-                else:
-                    logger.warning(
-                        f"Tool {tool_name} not found in proxified_tools memory"
-                    )
+            tools_to_register, newly_registered_tool_names = await self._process_search_results(results)
 
             evicted_tools = []
             if tools_to_register:
@@ -89,61 +67,92 @@ class ToolPoolManager:
                 ]
                 evicted_tools = await self._enforce_tool_pool_limit(new_tools_info)
 
-            newly_registered = []
             for tool_name, actual_tool, score in tools_to_register:
-                original_server_name = None
-                for result in results:
-                    if (
-                        sanitize_tool_name(
-                            result.tool.server_name,
-                            result.tool.name,
-                            self.config.tool_name_limit, # Use self.config.tool_name_limit
-                        )
-                        == tool_name
-                    ):
-                        original_server_name = result.tool.server_name
-                        break
+                original_server_name = self._get_original_server_name(tool_name, results)
                 await self._register_proxy_tool(
                     actual_tool, tool_name, score, original_server_name
                 )
-                newly_registered.append(tool_name)
 
-            registered_tools = []
-            for result in results:
-                tool_name = sanitize_tool_name(
-                    result.tool.server_name, result.tool.name, self.config.tool_name_limit # Use self.config.tool_name_limit
-                )
-                registered_tools.append(
-                    {
-                        "name": tool_name,
-                        "original_name": result.tool.name,
-                        "server": result.tool.server_name,
-                        "description": result.tool.description,
-                        "score": result.score,
-                        "newly_registered": tool_name in newly_registered,
-                    }
-                )
-
-            message = f"Found {len(registered_tools)} tools, registered {len(newly_registered)} new tools"
-            if evicted_tools:
-                message += f", evicted {len(evicted_tools)} tools to stay within limit ({self.config.tools_limit})" # Use self.config.tools_limit
-
-            return json.dumps(
-                {
-                    "message": message,
-                    "tools": registered_tools,
-                    "newly_registered": newly_registered,
-                    "evicted_tools": evicted_tools,
-                    "pool_size": len(self.current_tool_registrations),
-                    "pool_limit": self.config.tools_limit, # Use self.config.tools_limit
-                    "total_available_tools": len(self.proxified_tools),
-                    "query": query,
-                }
-            )
+            return self._build_response_payload(query, results, newly_registered_tool_names, evicted_tools)
 
         except Exception as e:
             logger.error(f"Error in retrieve_tools: {e}")
             return json.dumps({"error": str(e)})
+
+    async def _process_search_results(self, results: list) -> tuple[list, list]:
+        tools_to_register = []
+        newly_registered_tool_names = []
+        for result in results:
+            tool_name = sanitize_tool_name(
+                result.tool.server_name, result.tool.name, self.config.tool_name_limit
+            )
+
+            if tool_name in self.current_tool_registrations:
+                self._update_tool_metadata(tool_name, result.score)
+                continue
+
+            if tool_name in self.proxified_tools:
+                actual_tool = self.proxified_tools[tool_name]
+                tools_to_register.append((tool_name, actual_tool, result.score))
+                newly_registered_tool_names.append(tool_name)
+            else:
+                logger.warning(f"Tool {tool_name} not found in proxified_tools memory")
+        return tools_to_register, newly_registered_tool_names
+
+    def _update_tool_metadata(self, tool_name: str, score: float) -> None:
+        if tool_name in self.tool_pool_metadata:
+            self.tool_pool_metadata[tool_name]["timestamp"] = time.time()
+            self.tool_pool_metadata[tool_name]["score"] = max(
+                self.tool_pool_metadata[tool_name]["score"],
+                score,
+            )
+
+    def _get_original_server_name(self, tool_name: str, results: list) -> str | None:
+        for result in results:
+            if (
+                sanitize_tool_name(
+                    result.tool.server_name,
+                    result.tool.name,
+                    self.config.tool_name_limit,
+                )
+                == tool_name
+            ):
+                return result.tool.server_name
+        return None
+
+    def _build_response_payload(self, query: str, results: list, newly_registered: list, evicted_tools: list) -> str:
+        registered_tools = []
+        for result in results:
+            tool_name = sanitize_tool_name(
+                result.tool.server_name, result.tool.name, self.config.tool_name_limit
+            )
+            registered_tools.append(
+                {
+                    "name": tool_name,
+                    "original_name": result.tool.name,
+                    "server": result.tool.server_name,
+                    "description": result.tool.description,
+                    "score": result.score,
+                    "newly_registered": tool_name in newly_registered,
+                }
+            )
+
+        message = f"Found {len(registered_tools)} tools, registered {len(newly_registered)} new tools"
+        if evicted_tools:
+            message += f", evicted {len(evicted_tools)} tools to stay within limit ({self.config.tools_limit})"
+
+        return json.dumps(
+            {
+                "message": message,
+                "tools": registered_tools,
+                "newly_registered": newly_registered,
+                "evicted_tools": evicted_tools,
+                "pool_size": len(self.current_tool_registrations),
+                "pool_limit": self.config.tools_limit,
+                "total_available_tools": len(self.proxified_tools),
+                "query": query,
+            }
+        )
 
     async def call_tool(self, name: str, args: dict[str, Any]) -> str:
         """Execute a tool on the upstream server using the call_tool interface."""

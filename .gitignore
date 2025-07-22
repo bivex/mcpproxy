@@ -172,3 +172,5 @@ Thumbs.db
 /.specstory
 
 out/
+
+sort_smells.py

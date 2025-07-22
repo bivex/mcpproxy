@@ -202,88 +202,96 @@ class SmartMCPProxyServer:
         logger = get_logger()
 
         try:
-            # Check if we should reset data (useful when dimensions change)
             reset_data = os.getenv("MCPPROXY_RESET_DATA", "false").lower() == "true"
 
-            # Determine vector dimension based on embedder type
-            if self.config.embedder == EmbedderType.BM25:
-                vector_dimension = 1  # BM25 uses placeholder vectors
-            else:
-                # For vector embedders, we'll set dimension after creating the embedder
-                # Default to 384 for now, will be updated if needed
-                vector_dimension = 384
+            # Step 1: Initialize persistence and handle data reset
+            await self._init_persistence_and_handle_reset(reset_data)
 
-            # Initialize persistence with appropriate dimension
-            logger.debug(f"Initializing persistence with dimension: {vector_dimension}")
-            self.persistence = PersistenceFacade(
-                vector_dimension=vector_dimension, embedder_type=self.config.embedder
-            )
-            # Initialize PersistenceFacade asynchronously
-            await self.persistence._ainit()
+            # Step 2: Initialize indexer and reset embedder data
+            await self._init_indexer_and_reset_embedder_data(reset_data)
 
-            # Reset data if requested
-            if reset_data:
-                logger.info("Resetting all data as requested...")
-                await self.persistence.reset_all_data()
+            # Step 3: Update persistence with actual dimension if necessary
+            await self._update_persistence_dimension()
 
-            # Initialize indexer
-            logger.debug(f"Initializing indexer with embedder: {self.config.embedder}")
-            self.indexer = IndexerFacade(
-                self.persistence, self.config.embedder, self.config.hf_model
-            )
+            # Step 4: Initialize ToolPoolManager and ServerDiscoveryManager
+            self._init_tool_pool_and_server_discovery_managers()
 
-            # Reset embedder data if requested (must be done after indexer creation)
-            if reset_data:
-                logger.info("Resetting embedder data...")
-                await self.indexer.reset_embedder_data()
-
-            # For non-BM25 embedders, update persistence with actual dimension
-            if self.config.embedder != EmbedderType.BM25:
-                actual_dimension = self.indexer.embedder.get_dimension()
-                if actual_dimension != vector_dimension:
-                    # Recreate persistence with correct dimension
-                    logger.info(
-                        f"Updating vector dimension from {vector_dimension} to {actual_dimension}"
-                    )
-                    await self.persistence.close()
-                    self.persistence = PersistenceFacade(
-                        vector_dimension=actual_dimension, embedder_type=self.config.embedder
-                    )
-                    # Update indexer to use new persistence
-                    self.indexer.persistence = self.persistence
-
-            # Initialize ToolPoolManager
-            self.tool_pool_manager = ToolPoolManager(
-                mcp_app=self.mcp,
-                indexer=self.indexer,
-                persistence=self.persistence,
-                config=self.config, # Pass the config object directly
-                proxy_servers=self.proxy_servers,
-                truncate_output_fn=truncate_output,
-                truncate_output_len=self.truncate_output_len,
-            )
-            # Now setup the tools managed by ToolPoolManager
-            self._setup_tools() # Call _setup_tools here after tool_pool_manager is initialized
-
-            # Initialize ServerDiscoveryManager after ToolPoolManager
-            self.server_discovery_manager = ServerDiscoveryManager(
-                config=self.config, # Pass the config object directly
-                indexer=self.indexer,
-                persistence=self.persistence,
-                tool_pool_manager=self.tool_pool_manager,
-            )
+            # Step 5: Create and discover tools
+            await self._create_and_discover_tools()
 
         except Exception as e:
-            logger.error(f"Error during persistence/indexer initialization: {type(e).__name__}: {e}")
-            logger.error("Full persistence/indexer error details:", exc_info=True)
+            logger.error(f"Error during resource initialization: {type(e).__name__}: {e}")
+            logger.error("Full resource initialization error details:", exc_info=True)
             raise
 
+        logger.info("Smart MCP Proxy resources initialized")
+
+    async def _init_persistence_and_handle_reset(self, reset_data: bool) -> None:
+        logger = get_logger()
+        vector_dimension = 1 if self.config.embedder == EmbedderType.BM25 else 384
+
+        logger.debug(f"Initializing persistence with dimension: {vector_dimension}")
+        self.persistence = PersistenceFacade(
+            vector_dimension=vector_dimension, embedder_type=self.config.embedder
+        )
+        await self.persistence._ainit()
+
+        if reset_data:
+            logger.info("Resetting all data as requested...")
+            await self.persistence.reset_all_data()
+
+    async def _init_indexer_and_reset_embedder_data(self, reset_data: bool) -> None:
+        logger = get_logger()
+        logger.debug(f"Initializing indexer with embedder: {self.config.embedder}")
+        self.indexer = IndexerFacade(
+            self.persistence, self.config.embedder, self.config.hf_model
+        )
+
+        if reset_data:
+            logger.info("Resetting embedder data...")
+            await self.indexer.reset_embedder_data()
+
+    async def _update_persistence_dimension(self) -> None:
+        logger = get_logger()
+        if self.config.embedder != EmbedderType.BM25:
+            actual_dimension = self.indexer.embedder.get_dimension()
+            vector_dimension = 1 if self.config.embedder == EmbedderType.BM25 else 384 # Default dimension used during initial persistence setup
+            if actual_dimension != vector_dimension:
+                logger.info(
+                    f"Updating vector dimension from {vector_dimension} to {actual_dimension}"
+                )
+                await self.persistence.close()
+                self.persistence = PersistenceFacade(
+                    vector_dimension=actual_dimension, embedder_type=self.config.embedder
+                )
+                self.indexer.persistence = self.persistence
+
+    def _init_tool_pool_and_server_discovery_managers(self) -> None:
+        self.tool_pool_manager = ToolPoolManager(
+            mcp_app=self.mcp,
+            indexer=self.indexer,
+            persistence=self.persistence,
+            config=self.config,
+            proxy_servers=self.proxy_servers,
+            truncate_output_fn=truncate_output,
+            truncate_output_len=self.truncate_output_len,
+        )
+        self._setup_tools()
+
+        self.server_discovery_manager = ServerDiscoveryManager(
+            config=self.config,
+            indexer=self.indexer,
+            persistence=self.persistence,
+            tool_pool_manager=self.tool_pool_manager,
+        )
+
+    async def _create_and_discover_tools(self) -> None:
+        logger = get_logger()
         try:
-            # Create upstream clients and proxy servers
             logger.debug("Creating upstream clients and proxy servers...")
             await self.server_discovery_manager.create_upstream_clients_and_proxies()
-            self.upstream_clients = self.server_discovery_manager.upstream_clients # Update self's reference
-            self.proxy_servers = self.server_discovery_manager.proxy_servers # Update self's reference
+            self.upstream_clients = self.server_discovery_manager.upstream_clients
+            self.proxy_servers = self.server_discovery_manager.proxy_servers
             logger.debug(
                 f"Created {len(self.proxy_servers)} proxy servers and {len(self.upstream_clients)} upstream clients"
             )
@@ -293,16 +301,12 @@ class SmartMCPProxyServer:
             raise
 
         try:
-            # Discover and index tools from upstream servers
             logger.debug("Discovering and indexing tools...")
             await self.server_discovery_manager.discover_and_index_tools()
-
         except Exception as e:
             logger.error(f"Error during tool discovery and indexing: {type(e).__name__}: {e}")
             logger.error("Full tool discovery error details:", exc_info=True)
             raise
-
-        logger.info("Smart MCP Proxy resources initialized")
 
     async def _cleanup_resources(self) -> None:
         """Core resource cleanup logic."""

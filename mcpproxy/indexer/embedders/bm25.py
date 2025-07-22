@@ -196,85 +196,55 @@ class BM25Embedder(BaseEmbedder):
         Returns:
             List of (index, score) tuples
         """
-        # If candidate_texts provided, use them as search corpus
-        if candidate_texts is not None:
-            if not candidate_texts:
-                return []  # Empty candidate list
-
-            # Create a temporary embedder for candidate texts to avoid modifying current state
-            temp_embedder = BM25Embedder()
-            await temp_embedder.fit_corpus(candidate_texts)
-
-            if not temp_embedder.retriever:
-                return []
-
-            search_corpus = candidate_texts
-            retriever = temp_embedder.retriever
-        else:
-            # Use existing corpus
-            if not self.corpus:
-                return []  # No corpus available
-
-            # Ensure we have an index
-            if not self.is_indexed():
-                await self._build_index()
-
-            if not self.retriever:
-                return []
-
-            search_corpus = self.corpus
-            retriever = self.retriever
-
-        if not search_corpus:
-            return []
-
         if not query.strip():
             return []  # Empty query
 
         try:
-            # Tokenize query
-            query_tokens = bm25s.tokenize([query], stopwords="en")
+            search_corpus, retriever = await self._get_search_context(candidate_texts)
+            if not search_corpus or not retriever:
+                return []
 
-            # Retrieve results
-            results, scores = retriever.retrieve(
-                query_tokens, k=min(k, len(search_corpus))
-            )
-
-            # Convert to list of (index, score) tuples
-            if results.size > 0 and scores.size > 0:
-                result_list = []
-                # Handle different result formats from bm25s
-                if len(results) > 0:
-                    # results is a list of lists
-                    results_batch = results[0] if len(results) > 0 else []
-                    scores_batch = scores[0] if len(scores) > 0 else []
-
-                    for i, (result_item, score) in enumerate(
-                        zip(results_batch, scores_batch)
-                    ):
-                        # Extract index from result item
-                        if isinstance(result_item, dict):
-                            # Result is a dictionary with 'id' field
-                            doc_idx = result_item.get("id", i)
-                        else:
-                            # Result is already an index
-                            doc_idx = int(result_item)
-
-                        score = float(score)
-                        if 0 <= doc_idx < len(search_corpus):  # Valid index
-                            result_list.append((doc_idx, score))
-
-                    return result_list
-                else:
-                    # Old format - results is ndarray with shape
-                    for i in range(results.shape[1]):
-                        doc_idx = int(results[0, i])
-                        score = float(scores[0, i])
-                        if 0 <= doc_idx < len(search_corpus):  # Valid index
-                            result_list.append((doc_idx, score))
-                    return result_list
+            results, scores = self._tokenize_and_retrieve(query, retriever, search_corpus, k)
+            return self._format_search_results(results, scores, search_corpus)
         except Exception:
             # If search fails, return empty results
-            pass
+            return []
 
-        return []
+    async def _get_search_context(self, candidate_texts: list[str] | None):
+        if candidate_texts is not None:
+            if not candidate_texts:
+                return None, None
+            temp_embedder = BM25Embedder()
+            await temp_embedder.fit_corpus(candidate_texts)
+            return candidate_texts, temp_embedder.retriever
+        else:
+            if not self.corpus:
+                return None, None
+            if not self.is_indexed():
+                await self._build_index()
+            return self.corpus, self.retriever
+
+    def _tokenize_and_retrieve(self, query: str, retriever, search_corpus: list[str], k: int):
+        query_tokens = bm25s.tokenize([query], stopwords="en")
+        results, scores = retriever.retrieve(query_tokens, k=min(k, len(search_corpus)))
+        return results, scores
+
+    def _format_search_results(self, results, scores, search_corpus: list[str]):
+        result_list = []
+        if results.size > 0 and scores.size > 0:
+            if len(results) > 0 and isinstance(results[0], list):
+                # results is a list of lists (new format)
+                results_batch = results[0] if len(results) > 0 else []
+                scores_batch = scores[0] if len(scores) > 0 else []
+
+                for i, (result_item, score) in enumerate(zip(results_batch, scores_batch)):
+                    doc_idx = result_item.get("id", i) if isinstance(result_item, dict) else int(result_item)
+                    if 0 <= doc_idx < len(search_corpus):
+                        result_list.append((doc_idx, float(score)))
+            else:
+                # Old format - results is ndarray with shape
+                for i in range(results.shape[1]):
+                    doc_idx = int(results[0, i])
+                    if 0 <= doc_idx < len(search_corpus):
+                        result_list.append((doc_idx, float(scores[0, i])))
+        return result_list

@@ -4,117 +4,135 @@ import json
 from typing import Any
 import numpy as np
 
+def _get_create_instance_tool_data() -> dict[str, Any]:
+    return {
+        "name": "create_instance",
+        "description": "Create a new virtual machine instance",
+        "server_name": "company-api",
+        "params": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Instance name"},
+                "flavor": {"type": "string", "description": "Instance flavor"},
+                "region": {"type": "string", "description": "Deployment region"},
+            },
+            "required": ["name", "flavor"],
+        },
+        "tags": ["compute", "vm", "creation"],
+        "annotations": {"category": "compute", "cost": "medium"},
+    }
+
+def _get_delete_instance_tool_data() -> dict[str, Any]:
+    return {
+        "name": "delete_instance",
+        "description": "Delete an existing virtual machine instance",
+        "server_name": "company-api",
+        "params": {
+            "type": "object",
+            "properties": {
+                "instance_id": {
+                    "type": "string",
+                    "description": "Instance ID to delete",
+                }
+            },
+            "required": ["instance_id"],
+        },
+        "tags": ["compute", "vm", "deletion"],
+        "annotations": {"category": "compute", "cost": "low"},
+    }
+
+def _get_list_volumes_tool_data() -> dict[str, Any]:
+    return {
+        "name": "list_volumes",
+        "description": "List all storage volumes in a region",
+        "server_name": "storage-api",
+        "params": {
+            "type": "object",
+            "properties": {
+                "region": {
+                    "type": "string",
+                    "description": "Region to list volumes from",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of volumes",
+                },
+            },
+        },
+        "tags": ["storage", "volume", "list"],
+        "annotations": {"category": "storage", "cost": "low"},
+    }
+
+def _get_create_volume_tool_data() -> dict[str, Any]:
+    return {
+        "name": "create_volume",
+        "description": "Create a new storage volume",
+        "server_name": "storage-api",
+        "params": {
+            "type": "object",
+            "properties": {
+                "size": {"type": "integer", "description": "Volume size in GB"},
+                "name": {"type": "string", "description": "Volume name"},
+                "region": {"type": "string", "description": "Deployment region"},
+            },
+            "required": ["size", "name"],
+        },
+        "tags": ["storage", "volume", "creation"],
+        "annotations": {"category": "storage", "cost": "medium"},
+    }
+
+def _get_delete_volume_tool_data() -> dict[str, Any]:
+    return {
+        "name": "delete_volume",
+        "description": "Delete a storage volume permanently",
+        "server_name": "storage-api",
+        "params": {
+            "type": "object",
+            "properties": {
+                "volume_id": {
+                    "type": "string",
+                    "description": "Volume ID to delete",
+                }
+            },
+            "required": ["volume_id"],
+        },
+        "tags": ["storage", "volume", "deletion"],
+        "annotations": {"category": "storage", "cost": "low"},
+    }
+
+def _get_get_metrics_tool_data() -> dict[str, Any]:
+    return {
+        "name": "get_metrics",
+        "description": "Retrieve system metrics and performance data",
+        "server_name": "monitoring-api",
+        "params": {
+            "type": "object",
+            "properties": {
+                "metric_type": {"type": "string", "description": "Type of metric"},
+                "start_time": {
+                    "type": "string",
+                    "description": "Start time for metrics",
+                },
+                "end_time": {
+                    "type": "string",
+                    "description": "End time for metrics",
+                },
+            },
+            "required": ["metric_type"],
+        },
+        "tags": ["monitoring", "metrics", "performance"],
+        "annotations": {"category": "monitoring", "cost": "low"},
+    }
+
 def get_sample_tools_data() -> list[dict[str, Any]]:
     """Get comprehensive sample tools data for testing."""
     return [
-        {
-            "name": "create_instance",
-            "description": "Create a new virtual machine instance",
-            "server_name": "company-api",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string", "description": "Instance name"},
-                    "flavor": {"type": "string", "description": "Instance flavor"},
-                    "region": {"type": "string", "description": "Deployment region"},
-                },
-                "required": ["name", "flavor"],
-            },
-            "tags": ["compute", "vm", "creation"],
-            "annotations": {"category": "compute", "cost": "medium"},
-        },
-        {
-            "name": "delete_instance",
-            "description": "Delete an existing virtual machine instance",
-            "server_name": "company-api",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "instance_id": {
-                        "type": "string",
-                        "description": "Instance ID to delete",
-                    }
-                },
-                "required": ["instance_id"],
-            },
-            "tags": ["compute", "vm", "deletion"],
-            "annotations": {"category": "compute", "cost": "low"},
-        },
-        {
-            "name": "list_volumes",
-            "description": "List all storage volumes in a region",
-            "server_name": "storage-api",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "region": {
-                        "type": "string",
-                        "description": "Region to list volumes from",
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum number of volumes",
-                    },
-                },
-            },
-            "tags": ["storage", "volume", "list"],
-            "annotations": {"category": "storage", "cost": "low"},
-        },
-        {
-            "name": "create_volume",
-            "description": "Create a new storage volume",
-            "server_name": "storage-api",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "size": {"type": "integer", "description": "Volume size in GB"},
-                    "name": {"type": "string", "description": "Volume name"},
-                    "region": {"type": "string", "description": "Deployment region"},
-                },
-                "required": ["size", "name"],
-            },
-            "tags": ["storage", "volume", "creation"],
-            "annotations": {"category": "storage", "cost": "medium"},
-        },
-        {
-            "name": "delete_volume",
-            "description": "Delete a storage volume permanently",
-            "server_name": "storage-api",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "volume_id": {
-                        "type": "string",
-                        "description": "Volume ID to delete",
-                    }
-                },
-                "required": ["volume_id"],
-            },
-            "tags": ["storage", "volume", "deletion"],
-            "annotations": {"category": "storage", "cost": "low"},
-        },
-        {
-            "name": "get_metrics",
-            "description": "Retrieve system metrics and performance data",
-            "server_name": "monitoring-api",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "metric_type": {"type": "string", "description": "Type of metric"},
-                    "start_time": {
-                        "type": "string",
-                        "description": "Start time for metrics",
-                    },
-                    "end_time": {
-                        "type": "string",
-                        "description": "End time for metrics",
-                    },
-                },
-                "required": ["metric_type"],
-            },
-            "tags": ["monitoring", "metrics", "performance"],
-            "annotations": {"category": "monitoring", "cost": "low"},
-        },
+        _get_create_instance_tool_data(),
+        _get_delete_instance_tool_data(),
+        _get_list_volumes_tool_data(),
+        _get_create_volume_tool_data(),
+        _get_delete_volume_tool_data(),
+        _get_get_metrics_tool_data(),
     ]
 
 
