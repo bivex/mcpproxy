@@ -7,6 +7,8 @@ from pathlib import Path
 from ..logging import get_logger
 from ..models.schemas import EmbedderType, ProxyConfig, ServerConfig
 
+TOP_K_DEFAULT = 5  # Default number of top results for search
+
 
 class ConfigLoader:
     """Configuration loader supporting Cursor IDE style JSON config."""
@@ -22,7 +24,7 @@ class ConfigLoader:
         if not self.config_path.exists():
             logger = get_logger()
             logger.warning(f"Configuration file not found: {self.config_path}. Returning default configuration.")
-            return ProxyConfig(mcp_servers={}, embedder=EmbedderType.BM25, hf_model=None, top_k=5, tool_name_limit=60)
+            return ProxyConfig(mcp_servers={}, embedder=EmbedderType.BM25, hf_model=None, top_k=TOP_K_DEFAULT, tool_name_limit=60)
 
         with open(self.config_path) as f:
             config_data = json.load(f)
@@ -35,7 +37,7 @@ class ConfigLoader:
         # Get embedder configuration from environment
         embedder_type = EmbedderType(os.getenv("MCPPROXY_EMBEDDER", "BM25"))
         hf_model = os.getenv("MCPPROXY_HF_MODEL")
-        top_k = int(os.getenv("MCPPROXY_TOP_K", "5"))
+        top_k = int(os.getenv("MCPPROXY_TOP_K", str(TOP_K_DEFAULT)))
         tool_name_limit = int(os.getenv("MCPPROXY_TOOL_NAME_LIMIT", "60"))
 
         return ProxyConfig(

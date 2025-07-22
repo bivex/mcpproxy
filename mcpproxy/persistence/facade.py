@@ -11,6 +11,8 @@ from .db import DatabaseManager
 from .bm25_store import BM25Store
 from .faiss_store import FaissStore
 
+FACADE_TOP_K = 5  # Default number of top results for facade search
+
 
 def _get_data_directory() -> Path:
     """Get the data directory for storing database and index files.
@@ -158,7 +160,7 @@ class PersistenceFacade:
         await self.db.update_tool(tool)
 
     async def search_similar_tools(
-        self, query_vector: np.ndarray, k: int = 5
+        self, query_vector: np.ndarray, k: int = FACADE_TOP_K
     ) -> list[SearchResult]:
         """Search for similar tools using vector similarity."""
         if self.vector_store is None or self.db is None:

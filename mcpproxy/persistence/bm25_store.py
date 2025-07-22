@@ -2,6 +2,8 @@
 
 import numpy as np
 
+BM25_STORE_TOP_K = 5  # Default number of top results for BM25 store search
+
 
 class BM25Store:
     """Simple store for BM25 that doesn't use faiss vectors."""
@@ -31,7 +33,7 @@ class BM25Store:
         """Update a vector (no-op for BM25)."""
         pass
 
-    async def search(self, query_vector: np.ndarray, k: int = 5) -> tuple[np.ndarray, np.ndarray]:
+    async def search(self, query_vector: np.ndarray, k: int = BM25_STORE_TOP_K) -> tuple[np.ndarray, np.ndarray]:
         """Search for similar vectors (not used for BM25).
         
         Returns empty arrays since BM25 uses its own search mechanism.

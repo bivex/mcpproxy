@@ -8,6 +8,8 @@ import numpy as np
 
 from .base import BaseEmbedder
 
+BM25_TOP_K = 5  # Default number of top results for BM25 search
+
 
 class BM25Embedder(BaseEmbedder):
     """BM25-based embedder using bm25s library."""
@@ -182,7 +184,7 @@ class BM25Embedder(BaseEmbedder):
             return False
 
     async def search_similar(
-        self, query: str, candidate_texts: list[str] | None = None, k: int = 5
+        self, query: str, candidate_texts: list[str] | None = None, k: int = BM25_TOP_K
     ) -> list[tuple[int, float]]:
         """Search for similar texts using BM25.
 

@@ -5,6 +5,8 @@ from pathlib import Path
 
 import numpy as np  # type: ignore[import-untyped]
 
+FAISS_TOP_K = 5  # Default number of top results for FAISS search
+
 
 class FaissStore:
     """Faiss vector store for tool embeddings."""
@@ -98,9 +100,7 @@ class FaissStore:
         # store vectors separately and rebuild the index periodically
         pass
 
-    async def search(
-        self, query_vector: np.ndarray, k: int = 5
-    ) -> list[tuple[int, float]]:
+    async def search(self, query_vector: np.ndarray, k: int = FAISS_TOP_K) -> list[tuple[int, float]]:
         """Search for similar vectors."""
         if self.index is None or self.index.ntotal == 0: # Add guard for None and empty index
             return []
