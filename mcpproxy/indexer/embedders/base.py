@@ -61,18 +61,17 @@ class BaseEmbedder(ABC):
         if "type" in param_info:
             return param_info["type"]
         elif "anyOf" in param_info:
-            types = []
-            for type_variant in param_info["anyOf"]:
-                if isinstance(type_variant, dict) and "type" in type_variant:
-                    types.append(type_variant["type"])
-            return "|".join(types) if types else "unknown"
+            return self._extract_types_from_list(param_info["anyOf"])
         elif "oneOf" in param_info:
-            types = []
-            for type_variant in param_info["oneOf"]:
-                if isinstance(type_variant, dict) and "type" in type_variant:
-                    types.append(type_variant["type"])
-            return "|".join(types) if types else "unknown"
+            return self._extract_types_from_list(param_info["oneOf"])
         return "unknown"
+
+    def _extract_types_from_list(self, type_list: list[Any]) -> str:
+        types = []
+        for type_variant in type_list:
+            if isinstance(type_variant, dict) and "type" in type_variant:
+                types.append(type_variant["type"])
+        return "|".join(types) if types else "unknown"
 
     def combine_tool_text(
         self, name: str, description: str, params: dict[str, Any] | None = None

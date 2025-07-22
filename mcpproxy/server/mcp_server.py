@@ -163,16 +163,8 @@ class SmartMCPProxyServer:
             if self.transport != "stdio":
                 logger.info(f"Server will be available at {self.host}:{self.port}")
 
-            if self.transport == "stdio":
-                self.mcp.run()
-            elif self.transport == "streamable-http":
-                self.mcp.run(
-                    transport="streamable-http", host=self.host, port=self.port
-                )
-            elif self.transport == "sse":
-                self.mcp.run(transport="sse", host=self.host, port=self.port)
-            else:
-                self.mcp.run(transport=self.transport, host=self.host, port=self.port)
+            run_args = self._get_mcp_run_args()
+            self.mcp.run(**run_args)
 
         except FileNotFoundError as e:
             logger.error(f"Configuration error: {e}")
@@ -180,6 +172,12 @@ class SmartMCPProxyServer:
         except Exception as e:
             logger.error(f"Error starting proxy: {e}")
             sys.exit(1)
+
+    def _get_mcp_run_args(self) -> dict[str, Any]:
+        if self.transport == "stdio":
+            return {}
+        else:
+            return {"transport": self.transport, "host": self.host, "port": self.port}
 
     @asynccontextmanager
     async def _lifespan(self, app):

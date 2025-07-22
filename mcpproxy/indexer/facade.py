@@ -85,10 +85,6 @@ class IndexerFacade:
 
         await self.persistence.store_tool_with_vector(tool, vector)
 
-    async def _is_tool_unchanged(self, tool_hash: str) -> bool:
-        existing_tool = await self.persistence.get_tool_by_hash(tool_hash)
-        return existing_tool is not None
-
     async def index_tool_from_object(self, tool_obj: Any, server_name: str) -> None:
         """Index a tool from a Tool object, using hash-based change detection."""
         from fastmcp.tools.tool import Tool
@@ -97,16 +93,24 @@ class IndexerFacade:
             raise ValueError(f"Expected Tool object, got {type(tool_obj)}")
 
         tool_data = self._extract_tool_data_from_obj(tool_obj, server_name)
-
         tool_hash = compute_tool_hash(
             tool_data.name, tool_data.description or "", tool_data.to_dict()
         )
 
-        # Check if tool already exists with same hash
-        existing_tool = await self.persistence.get_tool_by_hash(tool_hash)
-        if existing_tool:
-            return  # Tool unchanged, no need to re-index
+        if await self._is_tool_unchanged(tool_hash):
+            return
 
+        await self._process_and_store_tool(tool_data, tool_hash, server_name)
+
+    async def _is_tool_unchanged(self, tool_hash: str) -> bool:
+        """Checks if a tool with the given hash already exists."""
+        existing_tool = await self.persistence.get_tool_by_hash(tool_hash)
+        return bool(existing_tool)
+
+    async def _process_and_store_tool(
+        self, tool_data: ToolData, tool_hash: str, server_name: str
+    ) -> None:
+        """Processes tool data, creates embedding, and stores it."""
         # Create enhanced text for embedding (include tags)
         enhanced_text = self.embedder.combine_tool_text(
             tool_data.name, tool_data.description or "", tool_data.params

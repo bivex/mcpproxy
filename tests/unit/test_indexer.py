@@ -384,18 +384,9 @@ class TestIndexerFacade:
         annotations = tool_data_scenario["annotations"]
         is_duplicate = tool_data_scenario["is_duplicate"]
         expected_store_call = tool_data_scenario["expected_store_call"]
-        expected_reindex = tool_data_scenario["expected_reindex"]
 
         if is_duplicate:
-            existing_tool = ToolMetadata(
-                id=1,
-                name=name,
-                description=description,
-                hash="duplicate_hash_value", # Needs to be consistent for mock
-                server_name=server_name,
-                params_json=json.dumps(params or {})
-            )
-            mock_persistence.get_tool_by_hash.return_value = existing_tool
+            self._setup_duplicate_tool_mock(mock_persistence, name, description, server_name, params)
 
         indexer = IndexerFacade(
             mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
@@ -414,21 +405,35 @@ class TestIndexerFacade:
         mock_persistence.get_tool_by_hash.assert_called_once()
 
         if expected_store_call:
-            mock_persistence.store_tool_with_vector.assert_called_once()
-            call_args = mock_persistence.store_tool_with_vector.call_args
-            stored_tool, _ = call_args[0]
-            assert stored_tool.name == name
-            assert stored_tool.description == description
-            assert stored_tool.server_name == server_name
-            if params: # Check if params are part of params_json
-                assert stored_tool.params_json is not None
-                assert json.loads(stored_tool.params_json).get("parameters").get("properties") == params.get("properties")
-            if tags:
-                assert json.loads(stored_tool.params_json).get("tags") == tags
-            if annotations:
-                assert json.loads(stored_tool.params_json).get("annotations") == annotations
+            self._assert_tool_stored_correctly(mock_persistence, name, description, server_name, params, tags, annotations)
         else:
             mock_persistence.store_tool_with_vector.assert_not_called()
+
+    def _setup_duplicate_tool_mock(self, mock_persistence, name, description, server_name, params):
+        existing_tool = ToolMetadata(
+            id=1,
+            name=name,
+            description=description,
+            hash="duplicate_hash_value", # Needs to be consistent for mock
+            server_name=server_name,
+            params_json=json.dumps(params or {})
+        )
+        mock_persistence.get_tool_by_hash.return_value = existing_tool
+
+    def _assert_tool_stored_correctly(self, mock_persistence, name, description, server_name, params, tags, annotations):
+        mock_persistence.store_tool_with_vector.assert_called_once()
+        call_args = mock_persistence.store_tool_with_vector.call_args
+        stored_tool, _ = call_args[0]
+        assert stored_tool.name == name
+        assert stored_tool.description == description
+        assert stored_tool.server_name == server_name
+        if params: # Check if params are part of params_json
+            assert stored_tool.params_json is not None
+            assert json.loads(stored_tool.params_json).get("parameters").get("properties") == params.get("properties")
+        if tags:
+            assert json.loads(stored_tool.params_json).get("tags") == tags
+        if annotations:
+            assert json.loads(stored_tool.params_json).get("annotations") == annotations
 
     @pytest.mark.parametrize(
         "initial_needs_reindex, expected_reindex_call",
@@ -721,10 +726,12 @@ class TestIndexerFacade:
         # Use the pre-populated indexer facade from the fixture
         indexer = populated_indexer_facade
         
+        results = await indexer.search_tools(query, k=k)
+        self._assert_search_results(results, query, expected_len_min, expected_tool_names, min_score_check, expected_len_max, max_score_check)
+
+    def _assert_search_results(self, results, query, expected_len_min, expected_tool_names, min_score_check, expected_len_max, max_score_check):
         queries = get_search_queries()
         query_data = next((q for q in queries if q["query"] == query), None)
-
-        results = await indexer.search_tools(query, k=k)
 
         if expected_len_min is not None:
             assert len(results) >= expected_len_min
