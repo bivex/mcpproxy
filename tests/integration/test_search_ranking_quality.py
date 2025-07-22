@@ -2,6 +2,7 @@
 
 import pytest
 import numpy as np
+from mcpproxy.models.schemas import ToolData
 
 
 class TestSearchRankingQuality:
@@ -25,9 +26,13 @@ class TestSearchRankingQuality:
         ]
 
         for name, desc, server, tags in tools:
-            await temp_indexer_facade.index_tool(
-                name=name, description=desc, server_name=server, tags=tags
+            tool_data = ToolData(
+                name=name,
+                description=desc,
+                server_name=server,
+                tags=tags
             )
+            await temp_indexer_facade.index_tool(tool_data)
 
         # Search for "create virtual machine"
         results = await temp_indexer_facade.search_tools("create virtual machine", k=5)

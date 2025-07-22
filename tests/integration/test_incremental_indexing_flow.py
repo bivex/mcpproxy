@@ -1,6 +1,7 @@
 """Integration tests for incremental indexing flow."""
 
 import pytest
+from mcpproxy.models.schemas import ToolData
 
 
 class TestIncrementalIndexingFlow:
@@ -10,11 +11,12 @@ class TestIncrementalIndexingFlow:
     async def test_incremental_indexing(self, temp_indexer_facade):
         """Test adding tools incrementally and searching."""
         # Step 1: Start with one tool
-        await temp_indexer_facade.index_tool(
+        initial_tool_data = ToolData(
             name="initial_tool",
             description="Initial tool for testing",
             server_name="server1",
         )
+        await temp_indexer_facade.index_tool(initial_tool_data)
 
         results = await temp_indexer_facade.search_tools("initial", k=5)
         assert len(results) == 1
@@ -28,7 +30,12 @@ class TestIncrementalIndexingFlow:
         ]
 
         for name, desc, server in additional_tools:
-            await temp_indexer_facade.index_tool(name, desc, server)
+            tool_data = ToolData(
+                name=name,
+                description=desc,
+                server_name=server,
+            )
+            await temp_indexer_facade.index_tool(tool_data)
 
         # Step 3: Verify incremental search works
         results = await temp_indexer_facade.search_tools("initial", k=5)

@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from ..models.schemas import EmbedderType, SearchResult, ToolMetadata
+from mcpproxy.models.schemas import ToolMetadata, SearchResult, ToolData
 from ..persistence.facade import PersistenceFacade
 from ..utils.dependency_management.dependencies import check_embedder_dependencies
 from ..utils.hashing.hashing import compute_tool_hash
@@ -52,22 +52,16 @@ class IndexerFacade:
             raise ValueError(f"Unknown embedder type: {embedder_type}")
 
     async def index_tool(
-        self,
-        name: str,
-        description: str,
-        server_name: str,
-        params: dict[str, Any] | None = None,
-        tags: list[str] | None = None,
-        annotations: Any | None = None,
+        self, tool_data: ToolData
     ) -> None:
         """Index a tool with its metadata using Tool class fields."""
         # Include tags and annotations in hash computation
         extended_params = {
-            "parameters": params or {},
-            "tags": tags or [],
-            "annotations": annotations,
+            "parameters": tool_data.params or {},
+            "tags": tool_data.tags or [],
+            "annotations": tool_data.annotations,
         }
-        tool_hash = compute_tool_hash(name, description, extended_params)
+        tool_hash = compute_tool_hash(tool_data.name, tool_data.description, extended_params)
 
         # Check if tool already exists
         existing_tool = await self.persistence.get_tool_by_hash(tool_hash)
@@ -75,9 +69,9 @@ class IndexerFacade:
             return  # Tool unchanged, no need to re-index
 
         # Create enhanced text for embedding (include tags)
-        enhanced_text = self.embedder.combine_tool_text(name, description, params)
-        if tags:
-            enhanced_text += f" | Tags: {', '.join(tags)}"
+        enhanced_text = self.embedder.combine_tool_text(tool_data.name, tool_data.description, tool_data.params)
+        if tool_data.tags:
+            enhanced_text += f" | Tags: {', '.join(tool_data.tags)}"
 
         # For BM25, we handle indexing differently
         if isinstance(self.embedder, BM25Embedder):
@@ -90,10 +84,10 @@ class IndexerFacade:
 
         # Store in persistence layer with extended metadata
         tool = ToolMetadata(
-            name=name,
-            description=description,
+            name=tool_data.name,
+            description=tool_data.description,
             hash=tool_hash,
-            server_name=server_name,
+            server_name=tool_data.server_name,
             params_json=str(extended_params) if extended_params else None,
         )
 
@@ -106,18 +100,10 @@ class IndexerFacade:
         if not isinstance(tool_obj, Tool):
             raise ValueError(f"Expected Tool object, got {type(tool_obj)}")
 
-        # Compute hash from all tool fields for change detection
-        tool_data = {
-            "name": tool_obj.name,
-            "description": tool_obj.description,
-            "parameters": tool_obj.parameters,
-            "tags": list(tool_obj.tags) if tool_obj.tags else [],
-            "annotations": str(tool_obj.annotations)
-            if tool_obj.annotations
-            else None,
-        }
+        tool_data = self._extract_tool_data_from_obj(tool_obj, server_name)
+
         tool_hash = compute_tool_hash(
-            tool_obj.name, tool_obj.description or "", tool_data
+            tool_data.name, tool_data.description or "", tool_data.to_dict()
         )
 
         # Check if tool already exists with same hash
@@ -127,10 +113,10 @@ class IndexerFacade:
 
         # Create enhanced text for embedding (include tags)
         enhanced_text = self.embedder.combine_tool_text(
-            tool_obj.name, tool_obj.description or "", tool_obj.parameters
+            tool_data.name, tool_data.description or "", tool_data.params
         )
-        if tool_obj.tags:
-            enhanced_text += f" | Tags: {', '.join(tool_obj.tags)}"
+        if tool_data.tags:
+            enhanced_text += f" | Tags: {', '.join(tool_data.tags)}"
 
         # For BM25, we handle indexing differently
         if isinstance(self.embedder, BM25Embedder):
@@ -145,14 +131,26 @@ class IndexerFacade:
         import json
 
         tool = ToolMetadata(
-            name=tool_obj.name,
-            description=tool_obj.description or "",
+            name=tool_data.name,
+            description=tool_data.description or "",
             hash=tool_hash,
             server_name=server_name,
-            params_json=json.dumps(tool_obj.parameters) if tool_obj.parameters else None,
+            params_json=json.dumps(tool_data.params) if tool_data.params else None,
         )
 
         await self.persistence.store_tool_with_vector(tool, vector)
+
+    def _extract_tool_data_from_obj(self, tool_obj: Any, server_name: str) -> ToolData:
+        return ToolData(
+            name=tool_obj.name,
+            description=tool_obj.description or "",
+            server_name=server_name,
+            params=tool_obj.parameters,
+            tags=list(tool_obj.tags) if tool_obj.tags else [],
+            annotations=str(tool_obj.annotations)
+            if tool_obj.annotations
+            else None,
+        )
 
     async def reindex_all_tools(self) -> None:
         """Rebuild the entire index with all stored tools (BM25 specific)."""

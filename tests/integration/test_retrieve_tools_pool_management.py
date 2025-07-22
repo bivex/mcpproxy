@@ -11,7 +11,7 @@ from mcpproxy.server.mcp_server import SmartMCPProxyServer
 from mcpproxy.server.tool_pool_manager import ToolPoolManager # Import ToolPoolManager
 
 
-class TestRetrieveToolsPoolManagement:
+class TestToolPoolManagement:
     """Integration tests for retrieve_tools with pool management."""
 
     @pytest.fixture
@@ -68,7 +68,7 @@ class TestRetrieveToolsPoolManagement:
         return SearchResult(tool=tool_metadata, score=score)
 
     @pytest.mark.asyncio
-    async def test_retrieve_tools_with_pool_limit_enforcement(
+    async def test_pool_limit_enforcement(
         self, mock_server_with_indexer
     ):
         """Test retrieve_tools enforces pool limit and evicts tools."""
@@ -146,7 +146,7 @@ class TestRetrieveToolsPoolManagement:
         server.tool_pool_manager._enforce_tool_pool_limit.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_retrieve_tools_freshness_update_existing_tools(
+    async def test_freshness_update_existing_tools(
         self, mock_server_with_indexer
     ):
         """Test that existing tools get freshness updates."""
@@ -218,7 +218,7 @@ class TestRetrieveToolsPoolManagement:
         assert metadata["original_score"] == 0.6  # Should preserve original
 
     @pytest.mark.asyncio
-    async def test_retrieve_tools_no_eviction_when_under_limit(
+    async def test_no_eviction_when_under_limit(
         self, mock_server_with_indexer
     ):
         """Test that no eviction occurs when under the pool limit."""
@@ -257,7 +257,7 @@ class TestRetrieveToolsPoolManagement:
         server.tool_pool_manager._register_proxy_tool.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_retrieve_tools_error_handling(self, mock_server_with_indexer):
+    async def test_error_handling(self, mock_server_with_indexer):
         """Test error handling in retrieve_tools."""
         server = mock_server_with_indexer
 
@@ -272,7 +272,7 @@ class TestRetrieveToolsPoolManagement:
         assert result["error"] == "Indexer not initialized"
 
     @pytest.mark.asyncio
-    async def test_retrieve_tools_no_results(self, mock_server_with_indexer):
+    async def test_no_results(self, mock_server_with_indexer):
         """Test retrieve_tools when no tools are found."""
         server = mock_server_with_indexer
 

@@ -1,6 +1,7 @@
 """Integration tests for large scale indexing."""
 
 import pytest
+from mcpproxy.models.schemas import ToolData
 
 
 class TestLargeScaleIndexing:
@@ -32,14 +33,15 @@ class TestLargeScaleIndexing:
             )
 
         # Index all tools
-        for tool in tools:
-            await temp_indexer_facade.index_tool(
-                name=tool["name"],
-                description=tool["description"],
-                server_name=tool["server_name"],
-                params=tool["params"],
-                tags=tool["tags"],
+        for tool_dict in tools:
+            tool_data = ToolData(
+                name=tool_dict["name"],
+                description=tool_dict["description"],
+                server_name=tool_dict["server_name"],
+                params=tool_dict["params"],
+                tags=tool_dict["tags"],
             )
+            await temp_indexer_facade.index_tool(tool_data)
 
         # Verify all tools are indexed
         all_tools = await temp_indexer_facade.persistence.get_all_tools()

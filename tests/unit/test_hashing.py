@@ -63,7 +63,7 @@ from tests.utils.sample_data_generators import get_hash_test_cases
         ),
     ],
 )
-def test_compute_tool_hash_valid_inputs(
+def test_hash_valid_inputs(
     name: str, description: str, params: Any, expected_len: int, expected_type: type
 ):
     """Test hash computation with various valid inputs, including None params and order independence."""
@@ -99,7 +99,7 @@ def test_compute_tool_hash_valid_inputs(
 #     assert hash_with_none == hash_with_empty  # None should be treated as empty dict
 
 
-def test_compute_tool_hash_different_inputs(): # Removed self
+def test_hash_different_inputs():
     """Test that different inputs produce different hashes."""
     base_params = {"type": "object", "properties": {"param1": {"type": "string"}}}
 
@@ -120,7 +120,7 @@ def test_compute_tool_hash_different_inputs(): # Removed self
     assert hash3 != hash4
 
 @pytest.mark.parametrize("test_case", get_hash_test_cases())
-def test_compute_tool_hash_test_cases(test_case: dict[str, Any]): # Removed self
+def test_hash_test_cases(test_case: dict[str, Any]):
     """Test hash computation with predefined test cases."""
     name = test_case["name"]
     description = test_case["description"]
@@ -151,7 +151,7 @@ def test_compute_tool_hash_test_cases(test_case: dict[str, Any]): # Removed self
     ("test_tool", "Test tool description", {"type": "object", "properties": {"param1": {"type": "string"}}}),
     ("consistency_test", "Testing consistency", {"type": "object", "properties": {"test": {"type": "string"}}}),
 ])
-def test_compute_tool_hash_consistency(name: str, description: str, params: Any): # Removed self
+def test_hash_consistency(name: str, description: str, params: Any):
     """Test that hash computation is deterministic and consistent across calls."""
     hash1 = compute_tool_hash(name, description, params)
     hash2 = compute_tool_hash(name, description, params)

@@ -21,6 +21,7 @@ from ..logging import configure_logging, get_logger
 from ..models.schemas import (
     EmbedderType,
     ToolRegistration,
+    ToolPoolManagerDependencies,
 )
 from ..persistence.facade import PersistenceFacade
 from ..utils.name_sanitization.name_sanitizer import sanitize_tool_name
@@ -45,11 +46,36 @@ class SmartMCPProxyServer:
     """Smart MCP Proxy server using FastMCP."""
 
     def __init__(self, config_path: str = "mcp_config.json"):
-        # Check environment variable first, then use provided path, then default
         self.config_path = os.getenv("MCPPROXY_CONFIG_PATH", config_path)
         self.config_loader = ConfigLoader(self.config_path)
         self.config = self.config_loader.load_config()
 
+        self._load_server_config()
+
+        # Will be initialized in lifespan
+        self.persistence: PersistenceFacade | None = None
+        self.indexer: IndexerFacade | None = None
+        self.tool_pool_manager: ToolPoolManager | None = None
+        self.server_discovery_manager: ServerDiscoveryManager | None = None # Forward declaration
+
+        # Track upstream clients and proxy servers
+        self.upstream_clients: dict[str, Client] = {}
+        self.proxy_servers: dict[str, FastMCP] = {}
+
+        fastmcp_kwargs = {
+            "name": "Smart MCP Proxy",
+            "instructions": self._get_instructions(),
+            "lifespan": self._lifespan,
+        }
+
+        # Add host and port for non-stdio transports
+        if self.transport != "stdio":
+            fastmcp_kwargs["host"] = self.host
+            fastmcp_kwargs["port"] = self.port
+
+        self.mcp = FastMCP(**fastmcp_kwargs)
+
+    def _load_server_config(self) -> None:
         # Transport configuration from environment variables
         self.transport = os.getenv("MCPPROXY_TRANSPORT", "stdio")
         self.host = os.getenv("MCPPROXY_HOST", "127.0.0.1")
@@ -85,87 +111,67 @@ class SmartMCPProxyServer:
         else:
             self.tools_limit = 15  # Default value
 
-        # Will be initialized in lifespan
-        self.persistence: PersistenceFacade | None = None
-        self.indexer: IndexerFacade | None = None
-        self.tool_pool_manager: ToolPoolManager | None = None
-        self.server_discovery_manager: ServerDiscoveryManager | None = None # Forward declaration
-
-        # Track upstream clients and proxy servers
-        self.upstream_clients: dict[str, Client] = {}
-        self.proxy_servers: dict[str, FastMCP] = {}
-
-        # Initialize FastMCP server with transport configuration
+    def _get_instructions(self) -> str:
         if self.routing_type == "CALL_TOOL":
-            instructions = """
+            return """
             This server provides intelligent tool discovery and proxying for MCP servers.
             First, use 'retrieve_tools' to search and discover available tools from configured upstream servers.
             Then, use 'call_tool' with the tool name and arguments to execute the tool on the upstream server.
             Tools are not dynamically registered - use the call_tool interface instead.
             """
         else:  # DYNAMIC
-            instructions = """
+            return """
             This server provides intelligent tool discovery and proxying for MCP servers.
             Use 'retrieve_tools' to search and access tools from configured upstream servers.
             proxy tools are dynamically created and registered on the fly in accordance with the search results.
             Pass the original user query (if possible) to the 'retrieve_tools' tool to get the search results.
             """
 
-        fastmcp_kwargs = {
-            "name": "Smart MCP Proxy",
-            "instructions": instructions,
-            "lifespan": self._lifespan,
-        }
-
-        # Add host and port for non-stdio transports
-        if self.transport != "stdio":
-            fastmcp_kwargs["host"] = self.host
-            fastmcp_kwargs["port"] = self.port
-
-        self.mcp = FastMCP(**fastmcp_kwargs)
-
     def run(self) -> None:
         """Run the Smart MCP Proxy server with full initialization."""
-        # Configure logging with debug level if requested
-        log_level = os.getenv("MCPPROXY_LOG_LEVEL", "INFO")
-        log_file = os.getenv("MCPPROXY_LOG_FILE")  # Optional file logging
-        configure_logging(log_level, log_file)
-        logger = get_logger()
+        self._configure_logging()
 
-        # Check for config file (already resolved in __init__)
+        if not self._handle_config_file():
+            return
+
+        self._run_fastmcp_app()
+
+    def _configure_logging(self) -> None:
+        log_level = os.getenv("MCPPROXY_LOG_LEVEL", "INFO")
+        log_file = os.getenv("MCPPROXY_LOG_FILE")
+        configure_logging(log_level, log_file)
+        # logger = get_logger() # Already imported and accessible
+
+    def _handle_config_file(self) -> bool:
+        logger = get_logger()
         config_path = self.config_path
 
         if not Path(config_path).exists():
             logger.warning(f"Configuration file not found: {config_path}")
             logger.info("Creating sample configuration...")
-
-            # Use the config_loader's file_handler to create sample config
-            # config_loader = ConfigLoader() # No longer needed, use existing self.config_loader
             self.config_loader.file_handler.create_sample_config()
-
             logger.info(
                 f"Please edit {config_path} and set required environment variables"
             )
-            return
+            return False
+        return True
 
+    def _run_fastmcp_app(self) -> None:
+        logger = get_logger()
         try:
             logger.info(f"Starting Smart MCP Proxy on transport: {self.transport}")
             if self.transport != "stdio":
                 logger.info(f"Server will be available at {self.host}:{self.port}")
 
-            # Run the FastMCP app with configured transport
             if self.transport == "stdio":
                 self.mcp.run()
             elif self.transport == "streamable-http":
-                # For streamable-http transport, pass host and port
                 self.mcp.run(
                     transport="streamable-http", host=self.host, port=self.port
                 )
             elif self.transport == "sse":
-                # For SSE transport (deprecated)
                 self.mcp.run(transport="sse", host=self.host, port=self.port)
             else:
-                # Fallback for any other transport
                 self.mcp.run(transport=self.transport, host=self.host, port=self.port)
 
         except FileNotFoundError as e:
@@ -205,16 +211,16 @@ class SmartMCPProxyServer:
             reset_data = os.getenv("MCPPROXY_RESET_DATA", "false").lower() == "true"
 
             # Step 1: Initialize persistence and handle data reset
-            await self._init_persistence_and_handle_reset(reset_data)
+            await self._init_persistence(reset_data)
 
             # Step 2: Initialize indexer and reset embedder data
-            await self._init_indexer_and_reset_embedder_data(reset_data)
+            await self._init_indexer(reset_data)
 
             # Step 3: Update persistence with actual dimension if necessary
             await self._update_persistence_dimension()
 
             # Step 4: Initialize ToolPoolManager and ServerDiscoveryManager
-            self._init_tool_pool_and_server_discovery_managers()
+            self._init_managers()
 
             # Step 5: Create and discover tools
             await self._create_and_discover_tools()
@@ -226,7 +232,7 @@ class SmartMCPProxyServer:
 
         logger.info("Smart MCP Proxy resources initialized")
 
-    async def _init_persistence_and_handle_reset(self, reset_data: bool) -> None:
+    async def _init_persistence(self, reset_data: bool) -> None:
         logger = get_logger()
         vector_dimension = 1 if self.config.embedder == EmbedderType.BM25 else 384
 
@@ -240,7 +246,7 @@ class SmartMCPProxyServer:
             logger.info("Resetting all data as requested...")
             await self.persistence.reset_all_data()
 
-    async def _init_indexer_and_reset_embedder_data(self, reset_data: bool) -> None:
+    async def _init_indexer(self, reset_data: bool) -> None:
         logger = get_logger()
         logger.debug(f"Initializing indexer with embedder: {self.config.embedder}")
         self.indexer = IndexerFacade(
@@ -266,13 +272,16 @@ class SmartMCPProxyServer:
                 )
                 self.indexer.persistence = self.persistence
 
-    def _init_tool_pool_and_server_discovery_managers(self) -> None:
-        self.tool_pool_manager = ToolPoolManager(
-            mcp_app=self.mcp,
+    def _init_managers(self) -> None:
+        tool_pool_dependencies = ToolPoolManagerDependencies(
             indexer=self.indexer,
             persistence=self.persistence,
             config=self.config,
             proxy_servers=self.proxy_servers,
+        )
+        self.tool_pool_manager = ToolPoolManager(
+            mcp_app=self.mcp,
+            dependencies=tool_pool_dependencies,
             truncate_output_fn=truncate_output,
             truncate_output_len=self.truncate_output_len,
         )

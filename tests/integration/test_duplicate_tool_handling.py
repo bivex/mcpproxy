@@ -1,6 +1,7 @@
 """Integration tests for duplicate tool handling."""
 
 import pytest
+from mcpproxy.models.schemas import ToolData
 
 
 class TestDuplicateToolHandling:
@@ -9,16 +10,16 @@ class TestDuplicateToolHandling:
     @pytest.mark.asyncio
     async def test_duplicate_tool_handling(self, temp_indexer_facade):
         """Test that duplicate tools (same hash) are handled correctly."""
-        tool_params = {
-            "name": "test_tool",
-            "description": "Test tool for duplicates",
-            "server_name": "test-server",
-            "params": {"type": "object", "properties": {"name": {"type": "string"}}},
-        }
+        tool_data = ToolData(
+            name="test_tool",
+            description="Test tool for duplicates",
+            server_name="test-server",
+            params={"type": "object", "properties": {"name": {"type": "string"}}},
+        )
 
         # Index the same tool twice
-        await temp_indexer_facade.index_tool(**tool_params)
-        await temp_indexer_facade.index_tool(**tool_params)  # Duplicate
+        await temp_indexer_facade.index_tool(tool_data)
+        await temp_indexer_facade.index_tool(tool_data)  # Duplicate
 
         # Should only have one tool stored
         all_tools = await temp_indexer_facade.persistence.get_all_tools()

@@ -36,34 +36,34 @@ class TestToolNameSanitizer:
     """Test cases for tool name sanitization functionality."""
 
     @pytest.mark.parametrize(
-        "server_name, tool_name, tool_name_limit, expected_start, expected_len, expected_no_trailing_underscore, expected_contains",
+        "test_case",
         [
-            ("test_server", "test_tool", 60, "test_server_test_tool", 60, True, []),  # Basic
-            ("my-server.com", "get/data:v1", 60, "my_server_com_get_data_v1", 60, True, []),  # Special chars
-            ("MyServer", "GetData", 60, "myserver_getdata", 60, True, []),  # Uppercase
-            ("very_long_server_name_that_goes_on_and_on", "extremely_long_tool_name_that_exceeds_reasonable_limits", 60, "very_long_server_name_that_goes_on_and_on_", 60, True, []), # Default limit
-            ("long_server_name", "long_tool_name", 30, "long_server_name_long_tool", 30, True, []),  # Custom limit 30
-            ("server_name_that_would_exceed_default_60_limit", "tool_name_that_would_also_exceed_60_char_limit", 100, "server_name_that_would_exceed_default_60_limit_tool_name_that_would_also_exceed_60_char_limit", 100, True, []), # Custom limit 100
-            ("server", "tool", 10, "server_tool", 10, True, []), # Original test for truncation, expect full name and correct length
-            ("server", "tool", 10, "server_too", 10, True, []), # Very short limit, expected: "server_too"
-            ("test_server", "test_tool", 60, "test_server_test_tool", 60, True, []), # Test normal case
-            ("test_server", "", 60, "test_server_tool", 60, True, []), # Empty tool name
-            ("", "test_tool", 60, "server_test_tool", 60, True, []), # Empty server name
-            ("", "", 60, "server_tool", 60, True, []), # Both empty
-            ("test__server", "test___tool", 60, "test_server_test_tool", 60, True, []), # Consecutive underscores
-            ("myserv", "very_long_tool_name_here", 20, "myserv_very_long", 17, True, []), # Server part + truncated tool name, expected: "myserv_very_long"
+            {"server_name": "test_server", "tool_name": "test_tool", "tool_name_limit": 60, "expected_start": "test_server_test_tool", "expected_len": 60, "expected_no_trailing_underscore": True, "expected_contains": []},  # Basic
+            {"server_name": "my-server.com", "tool_name": "get/data:v1", "tool_name_limit": 60, "expected_start": "my_server_com_get_data_v1", "expected_len": 60, "expected_no_trailing_underscore": True, "expected_contains": []},  # Special chars
+            {"server_name": "MyServer", "tool_name": "GetData", "tool_name_limit": 60, "expected_start": "myserver_getdata", "expected_len": 60, "expected_no_trailing_underscore": True, "expected_contains": []},  # Uppercase
+            {"server_name": "very_long_server_name_that_goes_on_and_on", "tool_name": "extremely_long_tool_name_that_exceeds_reasonable_limits", "tool_name_limit": 60, "expected_start": "very_long_server_name_that_goes_on_and_on_", "expected_len": 60, "expected_no_trailing_underscore": True, "expected_contains": []}, # Default limit
+            {"server_name": "long_server_name", "tool_name": "long_tool_name", "tool_name_limit": 30, "expected_start": "long_server_name_long_tool", "expected_len": 30, "expected_no_trailing_underscore": True, "expected_contains": []},  # Custom limit 30
+            {"server_name": "server_name_that_would_exceed_default_60_limit", "tool_name": "tool_name_that_would_also_exceed_60_char_limit", "tool_name_limit": 100, "expected_start": "server_name_that_would_exceed_default_60_limit_tool_name_that_would_also_exceed_60_char_limit", "expected_len": 100, "expected_no_trailing_underscore": True, "expected_contains": []}, # Custom limit 100
+            {"server_name": "server", "tool_name": "tool", "tool_name_limit": 10, "expected_start": "server_tool", "expected_len": 10, "expected_no_trailing_underscore": True, "expected_contains": []}, # Original test for truncation, expect full name and correct length
+            {"server_name": "server", "tool_name": "tool", "tool_name_limit": 10, "expected_start": "server_too", "expected_len": 10, "expected_no_trailing_underscore": True, "expected_contains": []}, # Very short limit, expected: "server_too"
+            {"server_name": "test_server", "tool_name": "test_tool", "tool_name_limit": 60, "expected_start": "test_server_test_tool", "expected_len": 60, "expected_no_trailing_underscore": True, "expected_contains": []}, # Test normal case
+            {"server_name": "test_server", "tool_name": "", "tool_name_limit": 60, "expected_start": "test_server_tool", "expected_len": 60, "expected_no_trailing_underscore": True, "expected_contains": []}, # Empty tool name
+            {"server_name": "", "tool_name": "test_tool", "tool_name_limit": 60, "expected_start": "server_test_tool", "expected_len": 60, "expected_no_trailing_underscore": True, "expected_contains": []}, # Empty server name
+            {"server_name": "", "tool_name": "", "tool_name_limit": 60, "expected_start": "server_tool", "expected_len": 60, "expected_no_trailing_underscore": True, "expected_contains": []}, # Both empty
+            {"server_name": "test__server", "tool_name": "test___tool", "tool_name_limit": 60, "expected_start": "test_server_test_tool", "expected_len": 60, "expected_no_trailing_underscore": True, "expected_contains": []}, # Consecutive underscores
+            {"server_name": "myserv", "tool_name": "very_long_tool_name_here", "tool_name_limit": 20, "expected_start": "myserv_very_long", "expected_len": 17, "expected_no_trailing_underscore": True, "expected_contains": []}, # Server part + truncated tool name, expected: "myserv_very_long"
         ],
     )
-    def test_sanitize_tool_name_scenarios(self,
-        server_name: str,
-        tool_name: str,
-        tool_name_limit: int,
-        expected_start: str,
-        expected_len: int,
-        expected_no_trailing_underscore: bool,
-        expected_contains: list[str],
-    ):
+    def test_sanitize_name_scenarios(self, test_case):
         """Test various scenarios for tool name sanitization."""
+        server_name = test_case["server_name"]
+        tool_name = test_case["tool_name"]
+        tool_name_limit = test_case["tool_name_limit"]
+        expected_start = test_case["expected_start"]
+        expected_len = test_case["expected_len"]
+        expected_no_trailing_underscore = test_case["expected_no_trailing_underscore"]
+        expected_contains = test_case["expected_contains"]
+
         result = sanitize_tool_name(server_name, tool_name, tool_name_limit=tool_name_limit)
 
         assert len(result) <= expected_len
@@ -72,13 +72,13 @@ class TestToolNameSanitizer:
         if expected_no_trailing_underscore:
             assert not result.endswith("_")
 
-    def test_sanitize_tool_name_starts_with_letter_requirement(self):
+    def test_sanitize_name_starts_with_letter(self):
         """Test that sanitized names start with letter or underscore."""
         result = sanitize_tool_name("123server", "456tool")
         
         assert result.startswith(("tool_", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "_"))
 
-    def test_sanitize_tool_name_regex_compliance(self):
+    def test_sanitize_name_regex_compliance(self):
         """Test that sanitized names conform to a simple regex (alphanumeric, underscore)."""
         # Test names that should be fully sanitized
         names_to_test = [

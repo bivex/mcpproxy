@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mcpproxy.models.schemas import EmbedderType, ToolRegistration, ToolMetadata
+from mcpproxy.models.schemas import EmbedderType, ToolRegistration, ToolMetadata, ToolPoolManagerDependencies
 from mcpproxy.persistence.facade import PersistenceFacade
 from mcpproxy.server.config.config import ProxyConfig
 from mcpproxy.server.server_discovery_manager import ServerDiscoveryManager
@@ -74,16 +74,20 @@ class TestToolPoolManagerUnit:
         mock_truncate_output_fn,
     ):
         """Fixture for a ToolPoolManager instance with mocked dependencies."""
+        tool_pool_dependencies = ToolPoolManagerDependencies(
+            indexer=mock_indexer,
+            persistence=mock_persistence,
+            config=mock_proxy_config,
+            proxy_servers=mock_proxy_servers,
+        )
+
         with patch("mcpproxy.server.tool_pool_manager.ToolPoolManager._enforce_tool_pool_limit", new_callable=AsyncMock) as mock_enforce_limit, \
              patch("mcpproxy.server.tool_pool_manager.ToolPoolManager._evict_tool", new_callable=AsyncMock) as mock_evict_tool, \
              patch("mcpproxy.server.tool_pool_manager.ToolPoolManager._register_proxy_tool", new_callable=AsyncMock) as mock_register_proxy_tool:
 
             manager = ToolPoolManager(
                 mcp_app=mock_fastmcp_app,
-                indexer=mock_indexer,
-                persistence=mock_persistence,
-                config=mock_proxy_config,
-                proxy_servers=mock_proxy_servers,
+                dependencies=tool_pool_dependencies,
                 truncate_output_fn=mock_truncate_output_fn,
                 truncate_output_len=500, # Example length
             )
@@ -110,7 +114,7 @@ class TestToolPoolManagerUnit:
             (0.6, 15, 0.01), # Medium age
         ],
     )
-    def test_calculate_tool_weight_scenarios(
+    def test_tool_weight_scenarios(
         self, score: float, time_ago_minutes: int, expected_weight_tolerance: float
     ):
         """Test weight calculation for various tool ages."""
@@ -158,7 +162,7 @@ class TestToolPoolManagerUnit:
         ]
     )
     @pytest.mark.asyncio
-    async def test_enforce_tool_pool_limit_scenarios(
+    async def test_enforce_pool_limit_scenarios(
         self,
         mock_tool_pool_manager,
         initial_tools_metadata,
@@ -224,7 +228,7 @@ class TestToolPoolManagerUnit:
         manager.mcp.remove_tool.assert_called_once_with(tool_name_to_evict)
 
     @pytest.mark.asyncio
-    async def test_register_proxy_tool_with_metadata(
+    async def test_register_proxy_tool_metadata(
         self, mock_tool_pool_manager, mock_proxy_servers, mock_fastmcp_app, mock_proxy_config
     ):
         """Test that tool registration includes metadata tracking."""
@@ -307,7 +311,7 @@ class TestToolPoolManagerUnit:
         assert weight1 > weight3  # Old high > medium-age low
 
     @pytest.mark.asyncio
-    async def test_freshness_update_on_existing_tool(self, mock_tool_pool_manager):
+    async def test_freshness_update(self, mock_tool_pool_manager):
         """Test that existing tools get freshness updates."""
         manager = mock_tool_pool_manager
 

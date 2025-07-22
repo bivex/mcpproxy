@@ -47,26 +47,8 @@ class BaseEmbedder(ABC):
         Returns:
             Tuple of (type, description)
         """
-        param_type = "unknown"
+        param_type = self._get_param_type(param_info)
         param_desc = ""
-
-        # Handle direct type field
-        if "type" in param_info:
-            param_type = param_info["type"]
-        # Handle anyOf patterns (e.g., {"anyOf": [{"type": "string"}, {"type": "null"}]})
-        elif "anyOf" in param_info:
-            types = []
-            for type_variant in param_info["anyOf"]:
-                if isinstance(type_variant, dict) and "type" in type_variant:
-                    types.append(type_variant["type"])
-            param_type = "|".join(types) if types else "unknown"
-        # Handle oneOf patterns
-        elif "oneOf" in param_info:
-            types = []
-            for type_variant in param_info["oneOf"]:
-                if isinstance(type_variant, dict) and "type" in type_variant:
-                    types.append(type_variant["type"])
-            param_type = "|".join(types) if types else "unknown"
 
         # Extract description (prefer description, then title, then empty)
         if "description" in param_info:
@@ -75,6 +57,23 @@ class BaseEmbedder(ABC):
             param_desc = param_info["title"]
 
         return param_type, param_desc
+
+    def _get_param_type(self, param_info: dict[str, Any]) -> str:
+        if "type" in param_info:
+            return param_info["type"]
+        elif "anyOf" in param_info:
+            types = []
+            for type_variant in param_info["anyOf"]:
+                if isinstance(type_variant, dict) and "type" in type_variant:
+                    types.append(type_variant["type"])
+            return "|".join(types) if types else "unknown"
+        elif "oneOf" in param_info:
+            types = []
+            for type_variant in param_info["oneOf"]:
+                if isinstance(type_variant, dict) and "type" in type_variant:
+                    types.append(type_variant["type"])
+            return "|".join(types) if types else "unknown"
+        return "unknown"
 
     def combine_tool_text(
         self, name: str, description: str, params: dict[str, Any] | None = None

@@ -22,7 +22,7 @@ class TestConfigLoader:
             json.dump(config_data, f)
             return f.name
 
-    def test_load_config_with_default_tool_name_limit(self):
+    def test_load_config_default_tool_name_limit(self):
         """Test loading config with default tool name limit."""
         config_data = {
             "mcpServers": {
@@ -47,7 +47,7 @@ class TestConfigLoader:
         finally:
             os.unlink(config_file)
 
-    def test_load_config_with_custom_tool_name_limit(self):
+    def test_load_config_custom_tool_name_limit(self):
         """Test loading config with custom tool name limit from environment."""
         config_data = {
             "mcpServers": {
@@ -68,7 +68,7 @@ class TestConfigLoader:
         finally:
             os.unlink(config_file)
 
-    def test_load_config_with_all_environment_variables(self):
+    def test_load_config_all_env_vars(self):
         """Test loading config with all environment variables set."""
         config_data = {
             "mcpServers": {
@@ -104,7 +104,7 @@ class TestConfigLoader:
         finally:
             os.unlink(config_file)
 
-    def test_load_config_invalid_tool_name_limit(self):
+    def test_load_config_invalid_tool_name_limit_value(self):
         """Test behavior with invalid tool name limit value."""
         config_data = {
             "mcpServers": {
@@ -126,7 +126,7 @@ class TestConfigLoader:
         finally:
             os.unlink(config_file)
 
-    def test_load_config_zero_tool_name_limit(self):
+    def test_load_config_zero_tool_name_limit_value(self):
         """Test behavior with zero tool name limit."""
         config_data = {
             "mcpServers": {
@@ -147,7 +147,7 @@ class TestConfigLoader:
         finally:
             os.unlink(config_file)
 
-    def test_load_config_very_large_tool_name_limit(self):
+    def test_load_config_large_tool_name_limit(self):
         """Test behavior with very large tool name limit."""
         config_data = {
             "mcpServers": {
@@ -183,7 +183,7 @@ class TestConfigLoader:
         assert config.tool_name_limit == 60
         assert config.tools_limit == 15 # Ensure tools_limit is also default
 
-    def test_create_sample_config_includes_tool_name_limit_docs(self, tmp_path):
+    def test_sample_config_includes_tool_name_limit_docs(self, tmp_path):
         """Test that create_sample_config includes tool_name_limit documentation."""
         config_path = tmp_path / "temp_mcp_proxy.json"
         handler = ConfigFileHandler(config_path)
@@ -194,7 +194,7 @@ class TestConfigLoader:
             assert content["tool_name_limit"] == 60
             assert content["tools_limit"] == 15
 
-    def test_proxy_config_model_defaults(self):
+    def test_proxy_config_defaults(self):
         """Test that ProxyConfig model has correct default values."""
         config = ProxyConfig(mcp_servers={})
         
@@ -203,7 +203,7 @@ class TestConfigLoader:
         assert config.top_k == 5
         assert config.tool_name_limit == 60
 
-    def test_proxy_config_model_custom_values(self):
+    def test_proxy_config_custom_values(self):
         """Test ProxyConfig model with custom values."""
         config = ProxyConfig(
             mcp_servers={"test": ServerConfig(url="http://test")},

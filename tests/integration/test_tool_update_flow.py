@@ -1,6 +1,7 @@
 """Integration tests for tool update flow."""
 
 import pytest
+from mcpproxy.models.schemas import ToolData
 
 
 class TestToolUpdateFlow:
@@ -10,11 +11,12 @@ class TestToolUpdateFlow:
     async def test_tool_update_flow(self, temp_indexer_facade):
         """Test updating tool with different hash."""
         # Index original tool
-        await temp_indexer_facade.index_tool(
+        tool_data_original = ToolData(
             name="update_test",
             description="Original description",
             server_name="test-server",
         )
+        await temp_indexer_facade.index_tool(tool_data_original)
 
         # Verify original is indexed
         results = await temp_indexer_facade.search_tools("original", k=5)
@@ -22,11 +24,12 @@ class TestToolUpdateFlow:
         assert "original" in results[0].tool.description.lower()
 
         # Update tool with different description (different hash)
-        await temp_indexer_facade.index_tool(
+        tool_data_updated = ToolData(
             name="update_test",
             description="Updated description with new content",
             server_name="test-server",
         )
+        await temp_indexer_facade.index_tool(tool_data_updated)
 
         # Should now have both versions (different hashes)
         all_tools = await temp_indexer_facade.persistence.get_all_tools()

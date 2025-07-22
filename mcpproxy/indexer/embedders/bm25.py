@@ -54,28 +54,31 @@ class BM25Embedder(BaseEmbedder):
         self.reset_index()
 
         # Remove the entire index directory if it exists
-        if os.path.exists(self.index_dir):
-            try:
-                # Remove all BM25 index files
-                index_path = os.path.join(self.index_dir, "bm25s_index")
-                if os.path.exists(index_path):
-                    # bm25s saves multiple files, so remove the directory
-                    if os.path.isdir(index_path):
-                        shutil.rmtree(index_path)
-                    else:
-                        os.remove(index_path)
+        try:
+            self._remove_bm25_index_directory()
+            self._remove_stale_bm25_files()
+        except Exception:
+            # If cleanup fails, continue - the reset_index() call above is most important
+            pass
 
-                # Also clean up any other index files that might exist
-                for file in os.listdir(self.index_dir):
-                    if file.startswith("bm25"):
-                        file_path = os.path.join(self.index_dir, file)
-                        if os.path.isdir(file_path):
-                            shutil.rmtree(file_path)
-                        else:
-                            os.remove(file_path)
-            except Exception:
-                # If cleanup fails, continue - the reset_index() call above is most important
-                pass
+    def _remove_bm25_index_directory(self) -> None:
+        import shutil
+        index_path = os.path.join(self.index_dir, "bm25s_index")
+        if os.path.exists(index_path):
+            if os.path.isdir(index_path):
+                shutil.rmtree(index_path)
+            else:
+                os.remove(index_path)
+
+    def _remove_stale_bm25_files(self) -> None:
+        import shutil
+        for file in os.listdir(self.index_dir):
+            if file.startswith("bm25"):
+                file_path = os.path.join(self.index_dir, file)
+                if os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+                else:
+                    os.remove(file_path)
 
     def get_corpus_size(self) -> int:
         """Get the current corpus size."""
@@ -233,18 +236,25 @@ class BM25Embedder(BaseEmbedder):
         result_list = []
         if results.size > 0 and scores.size > 0:
             if len(results) > 0 and isinstance(results[0], list):
-                # results is a list of lists (new format)
-                results_batch = results[0] if len(results) > 0 else []
-                scores_batch = scores[0] if len(scores) > 0 else []
-
-                for i, (result_item, score) in enumerate(zip(results_batch, scores_batch)):
-                    doc_idx = result_item.get("id", i) if isinstance(result_item, dict) else int(result_item)
-                    if 0 <= doc_idx < len(search_corpus):
-                        result_list.append((doc_idx, float(score)))
+                return self._format_new_results(results, scores, search_corpus)
             else:
-                # Old format - results is ndarray with shape
-                for i in range(results.shape[1]):
-                    doc_idx = int(results[0, i])
-                    if 0 <= doc_idx < len(search_corpus):
-                        result_list.append((doc_idx, float(scores[0, i])))
+                return self._format_old_results(results, scores, search_corpus)
+        return result_list
+
+    def _format_new_results(self, results, scores, search_corpus: list[str]) -> list[tuple[int, float]]:
+        result_list = []
+        results_batch = results[0] if len(results) > 0 else []
+        scores_batch = scores[0] if len(scores) > 0 else []
+        for i, (result_item, score) in enumerate(zip(results_batch, scores_batch)):
+            doc_idx = result_item.get("id", i) if isinstance(result_item, dict) else int(result_item)
+            if 0 <= doc_idx < len(search_corpus):
+                result_list.append((doc_idx, float(score)))
+        return result_list
+
+    def _format_old_results(self, results, scores, search_corpus: list[str]) -> list[tuple[int, float]]:
+        result_list = []
+        for i in range(results.shape[1]):
+            doc_idx = int(results[0, i])
+            if 0 <= doc_idx < len(search_corpus):
+                result_list.append((doc_idx, float(scores[0, i])))
         return result_list

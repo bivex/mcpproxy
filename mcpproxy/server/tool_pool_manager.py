@@ -1,7 +1,7 @@
 import asyncio
 import json
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Coroutine
 
 import mcp.types as types # type: ignore[import-untyped]
 from fastmcp import FastMCP # type: ignore[import-untyped]
@@ -10,7 +10,7 @@ from fastmcp.tools.tool import Tool # type: ignore[import-not-found]
 
 from ..indexer.facade import IndexerFacade
 from ..logging import get_logger
-from ..models.schemas import ToolRegistration, ToolMetadata # Add ToolMetadata import
+from ..models.schemas import ToolRegistration, ToolMetadata, ToolPoolManagerDependencies
 from ..persistence.facade import PersistenceFacade
 from ..utils.name_sanitization.name_sanitizer import sanitize_tool_name
 from ..utils.tool_scoring.tool_weight_calculator import calculate_tool_weight
@@ -25,18 +25,15 @@ class ToolPoolManager:
     def __init__(
         self,
         mcp_app: FastMCP,
-        indexer: IndexerFacade,
-        persistence: PersistenceFacade,
-        config: ProxyConfig,  # Change to accept ProxyConfig directly
-        proxy_servers: dict[str, FastMCP],
+        dependencies: ToolPoolManagerDependencies,  # Accept dependencies object
         truncate_output_fn: Callable[[str], str],
         truncate_output_len: int | None,
     ):
         self.mcp = mcp_app
-        self.indexer = indexer
-        self.persistence = persistence
-        self.config = config  # Store the entire config object
-        self.proxy_servers = proxy_servers
+        self.indexer = dependencies.indexer
+        self.persistence = dependencies.persistence
+        self.config = dependencies.config
+        self.proxy_servers = dependencies.proxy_servers
         self._truncate_output = truncate_output_fn
         self.truncate_output_len = truncate_output_len
 
@@ -155,55 +152,66 @@ class ToolPoolManager:
         )
 
     async def call_tool(self, name: str, args: dict[str, Any]) -> str:
-        """Execute a tool on the upstream server using the call_tool interface."""
+        """Search and call a tool by its name with arguments."""
+        logger = get_logger()
         try:
-            if "_" not in name:
-                return json.dumps({"error": f"Invalid tool name format: {name}. Expected format: servername_toolname"})
-            
-            if not self.indexer:
-                return json.dumps({"error": "Indexer not initialized"})
-            
-            all_tools = await self.persistence.get_all_tools() if self.persistence else []
-            
-            matching_tool = None
-            for tool_metadata in all_tools:
-                sanitized_name = sanitize_tool_name(tool_metadata.server_name, tool_metadata.name, self.config.tool_name_limit) # Use self.config.tool_name_limit
-                if sanitized_name == name:
-                    matching_tool = tool_metadata
-                    break
-            
+            validation_error = self._validate_tool_call(name)
+            if validation_error:
+                return validation_error
+
+            matching_tool = await self._find_matching_tool_metadata(name)
             if not matching_tool:
                 return json.dumps({"error": f"Tool '{name}' not found. Use retrieve_tools first to discover available tools."})
             
-            server_name = matching_tool.server_name
-            proxy_server = self.proxy_servers.get(server_name)
+            proxy_server = self._get_proxy_server(matching_tool.server_name)
             if not proxy_server:
-                return json.dumps({"error": f"Server '{server_name}' not available"})
+                return json.dumps({"error": f"Server '{matching_tool.server_name}' not available"})
             
-            original_tool_name = matching_tool.name
-            logger.debug(f"Executing tool '{original_tool_name}' on server '{server_name}' with args: {args}")
-            
-            result = await proxy_server.call(original_tool_name, **args)
-            
-            output = ""
-            if result and len(result) > 0:
-                content = result[0]
-                if hasattr(content, "text"):
-                    output = content.text
-                elif isinstance(content, dict) and "text" in content:
-                    output = content["text"]
-                else:
-                    output = str(result)
-            else:
-                output = str(result)
-
-            output = self._truncate_output(output, self.truncate_output_len)
-            
-            return output
+            return await self._execute_and_format_tool_output(name, args, matching_tool, proxy_server)
 
         except Exception as e:
             logger.error(f"Error executing tool '{name}': {e}")
             return json.dumps({"error": f"Error executing tool '{name}': {str(e)}"})
+
+    def _validate_tool_call(self, name: str) -> str | None:
+        if "_" not in name:
+            return json.dumps({"error": f"Invalid tool name format: {name}. Expected format: servername_toolname"})
+        if not self.indexer:
+            return json.dumps({"error": "Indexer not initialized"})
+        return None
+
+    async def _find_matching_tool_metadata(self, name: str) -> ToolMetadata | None:
+        all_tools = await self.persistence.get_all_tools() if self.persistence else []
+        for tool_metadata in all_tools:
+            sanitized_name = sanitize_tool_name(tool_metadata.server_name, tool_metadata.name, self.config.tool_name_limit)
+            if sanitized_name == name:
+                return tool_metadata
+        return None
+
+    def _get_proxy_server(self, server_name: str) -> FastMCP | None:
+        return self.proxy_servers.get(server_name)
+
+    async def _execute_and_format_tool_output(self, name: str, args: dict[str, Any], matching_tool: ToolMetadata, proxy_server: FastMCP) -> str:
+        logger = get_logger()
+        original_tool_name = matching_tool.name
+        server_name = matching_tool.server_name
+
+        logger.debug(f"Executing tool '{original_tool_name}' on server '{server_name}' with args: {args}")
+        result = await proxy_server.call(original_tool_name, **args)
+
+        output = ""
+        if result and len(result) > 0:
+            content = result[0]
+            if hasattr(content, "text"):
+                output = content.text
+            elif isinstance(content, dict) and "text" in content:
+                output = content["text"]
+            else:
+                output = str(result)
+        else:
+            output = str(result)
+
+        return self._truncate_output(output, self.truncate_output_len)
 
     async def _enforce_tool_pool_limit(self, new_tools: list[tuple[str, float]]) -> list[str]:
         """Enforce tool pool limit by evicting lowest-scoring tools."""
@@ -258,32 +266,12 @@ class ToolPoolManager:
             return
 
         original_tool: Tool = tool_metadata
-        if server_name is None:
-            if "_" in tool_name:
-                server_name = tool_name.split("_", 1)[0]
-            else:
-                server_name = "unknown"
+        determined_server_name = self._determine_server_name(tool_name, server_name)
         original_tool_name = original_tool.name
 
-        async def transform_fn(**kwargs):
-            proxy_server = self.proxy_servers.get(server_name)
-            if not proxy_server:
-                return f"Error: Server {server_name} not available"
-            
-            result = await proxy_server.call(original_tool_name, **kwargs)
-            output = ""
-            if result and len(result) > 0:
-                content = result[0]
-                if hasattr(content, "text"):
-                    output = content.text
-                elif isinstance(content, dict) and "text" in content:
-                    output = content["text"]
-                else:
-                    output = str(result)
-            else:
-                output = str(result)
-
-            return self._truncate_output(output, self.truncate_output_len)
+        transform_fn = self._create_transform_function(
+            determined_server_name, original_tool_name, self.proxy_servers, self._truncate_output, self.truncate_output_len
+        )
 
         proxified_tool = Tool.from_tool(
             tool=original_tool,
@@ -306,12 +294,42 @@ class ToolPoolManager:
             name=tool_name,
             description=original_tool.description or "",
             input_schema=input_schema,
-            server_name=server_name,
+            server_name=determined_server_name,
         )
 
         logger.debug(
             f"Registered proxy tool (from_tool): {tool_name} (original: {original_tool_name}, score: {score:.3f})"
         )
+
+    def _determine_server_name(self, tool_name: str, server_name: str | None) -> str:
+        if server_name is None:
+            if "_" in tool_name:
+                return tool_name.split("_", 1)[0]
+            else:
+                return "unknown"
+        return server_name
+
+    def _create_transform_function(self, server_name: str, original_tool_name: str, proxy_servers: dict[str, FastMCP], truncate_output_fn: Callable[[str], str], truncate_output_len: int | None) -> Callable[..., Coroutine[Any, Any, str]]:
+        async def transform_fn(**kwargs):
+            proxy_server = proxy_servers.get(server_name)
+            if not proxy_server:
+                return f"Error: Server {server_name} not available"
+            
+            result = await proxy_server.call(original_tool_name, **kwargs)
+            output = ""
+            if result and len(result) > 0:
+                content = result[0]
+                if hasattr(content, "text"):
+                    output = content.text
+                elif isinstance(content, dict) and "text" in content:
+                    output = content["text"]
+                else:
+                    output = str(result)
+            else:
+                output = str(result)
+
+            return truncate_output_fn(output, truncate_output_len)
+        return transform_fn
 
     async def add_proxified_tool_to_memory(self, sanitized_key: str, tool_obj: Tool) -> None:
         self.proxified_tools[sanitized_key] = tool_obj

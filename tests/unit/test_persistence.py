@@ -52,7 +52,7 @@ class TestDatabaseManager:
         assert retrieved_tool.server_name == "company-api"
 
     @pytest.mark.asyncio
-    async def test_get_tool_by_hash_not_found(self, in_memory_db):
+    async def test_get_tool_by_hash_missing(self, in_memory_db):
         """Test retrieving a tool by hash when not found."""
         db = in_memory_db
         retrieved_tool = await db.get_tool_by_hash("nonexistent_hash")
@@ -71,7 +71,7 @@ class TestDatabaseManager:
         assert {tool.name for tool in all_tools} == set(expected_names)
 
     @pytest.mark.asyncio
-    async def test_get_tools_by_server_company(self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list):
+    async def test_get_tools_by_server_company_api(self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list):
         """Test retrieving tools by server name for 'company-api'."""
         db = in_memory_db
         await db.insert_tool(sample_tool_metadata)
@@ -84,7 +84,7 @@ class TestDatabaseManager:
         assert all(tool.server_name == "company-api" for tool in tools_by_server)
 
     @pytest.mark.asyncio
-    async def test_get_tools_by_server_storage(self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list):
+    async def test_get_tools_by_server_storage_api(self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list):
         """Test retrieving tools by server name for 'storage-api'."""
         db = in_memory_db
         await db.insert_tool(sample_tool_metadata)
@@ -189,7 +189,7 @@ class TestFaissStore:
             yield mock_faiss_module, mock_index
 
     @pytest.mark.asyncio
-    async def test_faiss_store_initialization(self, mock_faiss):
+    async def test_faiss_init(self, mock_faiss):
         """Test FaissStore initialization."""
         mock_faiss_module, mock_index = mock_faiss
         store = FaissStore(":memory:", dimension=384)
@@ -205,7 +205,7 @@ class TestFaissStore:
             mock_faiss_module.read_index.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_faiss_store_add_vector_valid(self, mock_faiss):
+    async def test_faiss_add_vector_valid(self, mock_faiss):
         """Test adding a valid vector to FaissStore."""
         mock_faiss_module, mock_index = mock_faiss
         store = FaissStore(":memory:", dimension=384)
@@ -217,7 +217,7 @@ class TestFaissStore:
         mock_index.add.assert_called_once_with(np.array([vector_input]))
 
     @pytest.mark.asyncio
-    async def test_faiss_store_add_vector_wrong_dimension(self, mock_faiss):
+    async def test_faiss_add_vector_invalid_dim(self, mock_faiss):
         """Test adding a vector with an incorrect dimension to FaissStore."""
         mock_faiss_module, mock_index = mock_faiss
         store = FaissStore(":memory:", dimension=384)
@@ -226,7 +226,7 @@ class TestFaissStore:
             await store.add_vector(vector_input)
 
     @pytest.mark.asyncio
-    async def test_faiss_store_search_vectors_valid(self, mock_faiss):
+    async def test_faiss_search_vectors_valid(self, mock_faiss):
         """Test searching for vectors in FaissStore with valid results."""
         mock_faiss_module, mock_index = mock_faiss
         store = FaissStore(":memory:", dimension=384)
@@ -249,7 +249,7 @@ class TestFaissStore:
         np.testing.assert_array_equal(indices, mock_indices)
 
     @pytest.mark.asyncio
-    async def test_faiss_store_search_empty_index(self, mock_faiss):
+    async def test_faiss_search_empty_index(self, mock_faiss):
         """Test searching for vectors in an empty FaissStore index."""
         mock_faiss_module, mock_index = mock_faiss
         store = FaissStore(":memory:", dimension=384)
@@ -263,19 +263,25 @@ class TestFaissStore:
         assert len(indices) == 0
 
     @pytest.mark.parametrize(
-        "scenario, vector_input, k, expected_output_len, raises_error",
+        "test_case",
         [
-            ("add_vector_valid", np.random.random(384).astype(np.float32), None, 1, False),
-            ("add_vector_wrong_dimension", np.random.random(256).astype(np.float32), None, None, True),
-            ("search_vectors_valid", None, 3, 3, False), # vector_input will be generated inside test
-            ("search_empty_index", None, 5, 0, False), # vector_input will be generated inside test
+            {"scenario": "add_vector_valid", "vector_input": np.random.random(384).astype(np.float32), "k": None, "expected_output_len": 1, "raises_error": False},
+            {"scenario": "add_vector_wrong_dimension", "vector_input": np.random.random(256).astype(np.float32), "k": None, "expected_output_len": None, "raises_error": True},
+            {"scenario": "search_vectors_valid", "vector_input": None, "k": 3, "expected_output_len": 3, "raises_error": False},
+            {"scenario": "search_empty_index", "vector_input": None, "k": 5, "expected_output_len": 0, "raises_error": False},
         ],
     )
     @pytest.mark.asyncio
-    async def test_faiss_store_vector_operations_scenarios(
-        self, mock_faiss, scenario, vector_input, k, expected_output_len, raises_error
+    async def test_faiss_vector_ops_scenarios(
+        self, mock_faiss, test_case
     ):
         """Test various add and search vector operations for FaissStore."""
+        scenario = test_case["scenario"]
+        vector_input = test_case["vector_input"]
+        k = test_case["k"]
+        expected_output_len = test_case["expected_output_len"]
+        raises_error = test_case["raises_error"]
+
         mock_faiss_module, mock_index = mock_faiss
         store = FaissStore(":memory:", dimension=384)
 
@@ -346,7 +352,7 @@ class TestPersistenceFacade:
         assert sample_tool_metadata.faiss_vector_id is not None
 
     @pytest.mark.asyncio
-    async def test_persistence_facade_get_by_hash(self, temp_persistence_facade, sample_tool_metadata):
+    async def test_facade_get_by_hash(self, temp_persistence_facade, sample_tool_metadata):
         """Test retrieving a tool by hash using PersistenceFacade."""
         vector = np.random.random(384).astype(np.float32)
         await temp_persistence_facade.store_tool_with_vector(sample_tool_metadata, vector)
@@ -357,7 +363,7 @@ class TestPersistenceFacade:
         assert retrieved_tool.server_name == "company-api"
 
     @pytest.mark.asyncio
-    async def test_persistence_facade_get_all_tools(self, temp_persistence_facade, sample_tool_metadata, sample_tool_metadata_list):
+    async def test_facade_get_all_tools(self, temp_persistence_facade, sample_tool_metadata, sample_tool_metadata_list):
         """Test retrieving all tools using PersistenceFacade."""
         vector = np.random.random(384).astype(np.float32)
         await temp_persistence_facade.store_tool_with_vector(sample_tool_metadata, vector)
@@ -370,7 +376,7 @@ class TestPersistenceFacade:
         assert {tool.name for tool in all_tools} == set(expected_names)
 
     @pytest.mark.asyncio
-    async def test_persistence_facade_get_by_server(self, temp_persistence_facade, sample_tool_metadata, sample_tool_metadata_list):
+    async def test_facade_get_by_server(self, temp_persistence_facade, sample_tool_metadata, sample_tool_metadata_list):
         """Test retrieving tools by server name using PersistenceFacade."""
         vector = np.random.random(384).astype(np.float32)
         await temp_persistence_facade.store_tool_with_vector(sample_tool_metadata, vector)
@@ -384,18 +390,25 @@ class TestPersistenceFacade:
         assert all(tool.server_name == "company-api" for tool in tools_by_server)
 
     @pytest.mark.parametrize(
-        "scenario, query, expected_len, expected_names, expected_tool_hash, expected_server_name",
+        "test_case",
         [
-            ("get_by_hash", {"hash": "abc123def456"}, None, None, "abc123def456", "company-api"),
-            ("get_all", None, 4, ["create_instance", "delete_instance", "list_volumes", "create_volume"], None, None),
-            ("get_by_server", {"server_name": "company-api"}, 2, ["create_instance", "delete_instance"], None, "company-api"),
+            {"scenario": "get_by_hash", "query": {"hash": "abc123def456"}, "expected_len": None, "expected_names": None, "expected_tool_hash": "abc123def456", "expected_server_name": "company-api"},
+            {"scenario": "get_all", "query": None, "expected_len": 4, "expected_names": ["create_instance", "delete_instance", "list_volumes", "create_volume"], "expected_tool_hash": None, "expected_server_name": None},
+            {"scenario": "get_by_server", "query": {"server_name": "company-api"}, "expected_len": 2, "expected_names": ["create_instance", "delete_instance"], "expected_tool_hash": None, "expected_server_name": "company-api"},
         ],
     )
     @pytest.mark.asyncio
-    async def test_persistence_facade_retrieval_scenarios(
-        self, temp_persistence_facade, sample_tool_metadata, sample_tool_metadata_list, scenario, query, expected_len, expected_names, expected_tool_hash, expected_server_name
+    async def test_facade_retrieval_scenarios(
+        self, temp_persistence_facade, sample_tool_metadata, sample_tool_metadata_list, test_case
     ):
         """Test various retrieval scenarios for PersistenceFacade."""
+        scenario = test_case["scenario"]
+        query = test_case["query"]
+        expected_len = test_case["expected_len"]
+        expected_names = test_case["expected_names"]
+        expected_tool_hash = test_case["expected_tool_hash"]
+        expected_server_name = test_case["expected_server_name"]
+
         # Prepare data
         vector = np.random.random(384).astype(np.float32)
         await temp_persistence_facade.store_tool_with_vector(sample_tool_metadata, vector)
@@ -451,17 +464,21 @@ class TestPersistenceFacade:
             assert results[0].score > results[1].score > results[2].score
 
     @pytest.mark.parametrize(
-        "scenario, action_data, expected_outcome",
+        "test_case",
         [
-            ("update_tool", {"name": "updated_tool", "description": "Updated description", "hash": "updated_hash", "server_name": "updated_server"}, "updated"),
-            ("delete_by_server", {"server_name": "company-api"}, "deleted"),
+            {"scenario": "update_tool", "action_data": {"name": "updated_tool", "description": "Updated description", "hash": "updated_hash", "server_name": "updated_server"}, "expected_outcome": "updated"},
+            {"scenario": "delete_by_server", "action_data": {"server_name": "company-api"}, "expected_outcome": "deleted"},
         ],
     )
     @pytest.mark.asyncio
-    async def test_persistence_facade_modification_scenarios(
-        self, temp_persistence_facade, sample_tool_metadata, sample_tool_metadata_list, scenario, action_data, expected_outcome
+    async def test_facade_modification_scenarios(
+        self, temp_persistence_facade, sample_tool_metadata, sample_tool_metadata_list, test_case
     ):
         """Test various modification scenarios for PersistenceFacade."""
+        scenario = test_case["scenario"]
+        action_data = test_case["action_data"]
+        expected_outcome = test_case["expected_outcome"]
+
         vector = np.random.random(384).astype(np.float32)
         tool_id = await temp_persistence_facade.store_tool_with_vector(sample_tool_metadata, vector)
 

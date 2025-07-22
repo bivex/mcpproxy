@@ -2,13 +2,14 @@
 
 import pytest
 from mcpproxy.indexer.embedders.bm25 import BM25Embedder
+from mcpproxy.models.schemas import ToolData
 
 
-class TestPersistenceLayerIntegration:
+class TestPersistenceIntegration:
     """Test integration between indexer and persistence layer."""
 
     @pytest.mark.asyncio
-    async def test_persistence_layer_integration(self, temp_indexer_facade):
+    async def test_integration(self, temp_indexer_facade):
         """Test integration between indexer and persistence layer."""
         # Index a tool with complex metadata
         complex_params = {
@@ -26,7 +27,7 @@ class TestPersistenceLayerIntegration:
             "required": ["name"],
         }
 
-        await temp_indexer_facade.index_tool(
+        tool_data = ToolData(
             name="complex_tool",
             description="Tool with complex parameters",
             server_name="complex-server",
@@ -34,6 +35,7 @@ class TestPersistenceLayerIntegration:
             tags=["complex", "configuration"],
             annotations={"version": "1.0", "deprecated": False},
         )
+        await temp_indexer_facade.index_tool(tool_data)
 
         # Verify tool was stored with all metadata
         all_tools = await temp_indexer_facade.persistence.get_all_tools()

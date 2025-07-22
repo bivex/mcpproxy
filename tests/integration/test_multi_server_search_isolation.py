@@ -1,13 +1,14 @@
 """Integration tests for multi-server search isolation."""
 
 import pytest
+from mcpproxy.models.schemas import ToolData
 
 
-class TestMultiServerSearchIsolation:
+class TestMultiServerIsolation:
     """Test that tools from different servers are properly isolated yet searchable."""
 
     @pytest.mark.asyncio
-    async def test_multi_server_search_isolation(self, temp_indexer_facade):
+    async def test_isolation(self, temp_indexer_facade):
         """Test that tools from different servers are properly isolated yet searchable."""
         # Index similar tools on different servers
         servers_and_tools = [
@@ -36,9 +37,12 @@ class TestMultiServerSearchIsolation:
 
         for server_name, tools in servers_and_tools:
             for tool_name, description in tools:
-                await temp_indexer_facade.index_tool(
-                    name=tool_name, description=description, server_name=server_name
+                tool_data = ToolData(
+                    name=tool_name,
+                    description=description,
+                    server_name=server_name,
                 )
+                await temp_indexer_facade.index_tool(tool_data)
 
         # Test global search finds tools from all servers
         results = await temp_indexer_facade.search_tools("create", k=10)

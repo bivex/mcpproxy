@@ -35,7 +35,7 @@ class ServerDiscoveryManager:
         self.upstream_clients: dict[str, Client] = {}
         self.proxy_servers: dict[str, FastMCP] = {}
 
-    async def create_upstream_clients_and_proxies(self) -> None:
+    async def create_clients_and_proxies(self) -> None:
         """Create upstream clients and proxy servers for all configured servers."""
         logger.info(
             f"Creating upstream clients for {len(self.config.mcp_servers)} servers..."
@@ -44,9 +44,9 @@ class ServerDiscoveryManager:
         for server_name, server_config in self.config.mcp_servers.items():
             client, proxy_server = None, None
             if server_config.url:
-                client, proxy_server = await self._create_client_and_proxy_for_url(server_name, server_config.url)
+                client, proxy_server = await self._create_url_client_proxy(server_name, server_config.url)
             elif server_config.command:
-                client, proxy_server = await self._create_client_and_proxy_for_command(server_name, server_config.command, getattr(server_config, "args", []), getattr(server_config, "env", {}))
+                client, proxy_server = await self._create_cmd_client_proxy(server_name, server_config.command, getattr(server_config, "args", []), getattr(server_config, "env", {}))
             else:
                 logger.warning(
                     f"Skipping {server_name}: no URL or command specified"
@@ -63,7 +63,7 @@ class ServerDiscoveryManager:
                     f"Proxy server for {server_name}: type={type(proxy_server)}, has_get_tools={hasattr(proxy_server, 'get_tools')}"
                 )
 
-    async def _create_client_and_proxy_for_url(self, server_name: str, url: str):
+    async def _create_url_client_proxy(self, server_name: str, url: str):
         logger = get_logger()
         try:
             logger.debug(
@@ -81,7 +81,7 @@ class ServerDiscoveryManager:
             logger.error(f"URL client/proxy error details for {server_name}:", exc_info=True)
             return None, None
 
-    async def _create_client_and_proxy_for_command(self, server_name: str, command: str, args: list, env: dict):
+    async def _create_cmd_client_proxy(self, server_name: str, command: str, args: list, env: dict):
         logger = get_logger()
         config_dict = {
             "mcpServers": {
@@ -169,23 +169,29 @@ class ServerDiscoveryManager:
 
         removed_count = 0
         for server_name, tool_names in current_tools.items():
-            db_tools = await self.persistence.get_tools_by_server(server_name)
-
-            db_tool_names = {tool.name for tool in db_tools}
-            stale_tool_names = db_tool_names - tool_names
-
-            if stale_tool_names:
-                logger.debug(
-                    f"Server {server_name}: removing {len(stale_tool_names)} stale tools: {stale_tool_names}"
-                )
-
-                for tool in db_tools:
-                    if tool.name in stale_tool_names:
-                        await self._remove_tool_from_persistence(tool)
-                        removed_count += 1
+            removed_count += await self._remove_stale_tools_for_server(server_name, tool_names)
 
         if removed_count > 0:
             logger.info(f"Cleaned up {removed_count} stale tools from database")
+
+    async def _remove_stale_tools_for_server(self, server_name: str, current_tool_names: set[str]) -> int:
+        logger = get_logger()
+        removed_from_server_count = 0
+        db_tools = await self.persistence.get_tools_by_server(server_name)
+
+        db_tool_names = {tool.name for tool in db_tools}
+        stale_tool_names = db_tool_names - current_tool_names
+
+        if stale_tool_names:
+            logger.debug(
+                f"Server {server_name}: removing {len(stale_tool_names)} stale tools: {stale_tool_names}"
+            )
+
+            for tool in db_tools:
+                if tool.name in stale_tool_names:
+                    await self._remove_tool_from_persistence(tool)
+                    removed_from_server_count += 1
+        return removed_from_server_count
 
     async def _remove_tool_from_persistence(self, tool: ToolMetadata) -> None:
         """Remove a specific tool from persistence layer."""

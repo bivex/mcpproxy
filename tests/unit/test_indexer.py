@@ -16,7 +16,7 @@ from mcpproxy.indexer.embedders.bm25 import BM25Embedder
 from mcpproxy.indexer.embedders.huggingface import HuggingFaceEmbedder
 from mcpproxy.indexer.embedders.openai import OpenAIEmbedder
 from mcpproxy.indexer.facade import IndexerFacade
-from mcpproxy.models.schemas import EmbedderType, SearchResult, ToolMetadata
+from mcpproxy.models.schemas import EmbedderType, SearchResult, ToolMetadata, ToolData
 from mcpproxy.persistence.facade import PersistenceFacade # Import PersistenceFacade
 from tests.fixtures.data import get_sample_tools_data, get_search_queries
 
@@ -157,6 +157,15 @@ class TestBM25Embedder:
         """Test BM25Embedder lifecycle: initialization, corpus fitting, and reindexing."""
         embedder = BM25Embedder(temp_index_dir)
 
+        self._test_initialization_scenario(embedder, temp_index_dir)
+
+        if scenario == "fit_corpus" and corpus_data:
+            await self._test_fit_corpus_scenario(embedder, corpus_data)
+
+        if scenario == "reindex":
+            await self._test_reindex_scenario(embedder, corpus_data, texts_to_embed, reindex_expected)
+
+    def _test_initialization_scenario(self, embedder: BM25Embedder, temp_index_dir: str) -> None:
         # Test initialization
         assert embedder.index_dir == temp_index_dir
         assert embedder.corpus == []
@@ -164,32 +173,32 @@ class TestBM25Embedder:
         assert embedder.retriever is None
         assert os.path.exists(os.path.join(temp_index_dir, "bm25s_index"))
 
-        if scenario == "fit_corpus" and corpus_data:
+    async def _test_fit_corpus_scenario(self, embedder: BM25Embedder, corpus_data: list[str]) -> None:
+        await embedder.fit_corpus(corpus_data)
+        assert embedder.corpus == corpus_data
+        assert embedder.is_indexed()
+        assert embedder.retriever is not None
+
+    async def _test_reindex_scenario(self, embedder: BM25Embedder, corpus_data: list[str] | None, texts_to_embed: list[str] | None, reindex_expected: bool) -> None:
+        # Ensure initial indexing from corpus_data
+        if corpus_data:
             await embedder.fit_corpus(corpus_data)
-            assert embedder.corpus == corpus_data
-            assert embedder.is_indexed()
-            assert embedder.retriever is not None
+        
+        # Embed new texts to trigger reindexing
+        if texts_to_embed:
+            for text in texts_to_embed:
+                await embedder.embed_text(text)
+            assert not embedder.is_indexed() # Should be marked as needing reindex
 
-        if scenario == "reindex":
-            # Ensure initial indexing from corpus_data
-            if corpus_data:
-                await embedder.fit_corpus(corpus_data)
-            
-            # Embed new texts to trigger reindexing
-            if texts_to_embed:
-                for text in texts_to_embed:
-                    await embedder.embed_text(text)
-                assert not embedder.is_indexed() # Should be marked as needing reindex
+        await embedder.reindex()
 
-            await embedder.reindex()
-
-            assert embedder.is_indexed()
-            assert embedder.retriever is not None
-            if texts_to_embed:
-                # Re-check the corpus after reindexing to include new texts
-                expected_corpus = sorted(list(set(texts_to_embed + corpus_data)))
-                actual_corpus = sorted(embedder.corpus)
-                assert actual_corpus == expected_corpus
+        assert embedder.is_indexed()
+        assert embedder.retriever is not None
+        if texts_to_embed:
+            # Re-check the corpus after reindexing to include new texts
+            expected_corpus = sorted(list(set(texts_to_embed + corpus_data)))
+            actual_corpus = sorted(embedder.corpus)
+            assert actual_corpus == expected_corpus
 
     @pytest.mark.parametrize("texts", [
         "test text",
@@ -212,23 +221,48 @@ class TestBM25Embedder:
             assert all(v.dtype == np.float32 for v in vectors)
             assert all(len(v) == 1 for v in vectors)  # Placeholder vectors
 
-    @pytest.mark.parametrize("query, candidate_texts, k, expected_results_len, pre_indexed_corpus", [
-        ("create instance", ["create virtual machine instance", "delete storage volume"], 2, 1, None),
-        ("create instance", None, 2, 1, ["create virtual machine instance", "delete storage volume", "list network interfaces"]), # Uses pre-indexed corpus
-        ("test query", [], 5, 0, None) # Empty candidates
-    ])
+    @pytest.mark.parametrize(
+        "test_case",
+        [
+            {
+                "query": "create instance",
+                "candidate_texts": ["create virtual machine instance", "delete storage volume"],
+                "k": 2,
+                "expected_results_len": 1,
+                "pre_indexed_corpus": None,
+            },
+            {
+                "query": "create instance",
+                "candidate_texts": None,
+                "k": 2,
+                "expected_results_len": 1,
+                "pre_indexed_corpus": [
+                    "create virtual machine instance",
+                    "delete storage volume",
+                    "list network interfaces",
+                ],
+            },  # Uses pre-indexed corpus
+            {"query": "test query", "candidate_texts": [], "k": 5, "expected_results_len": 0, "pre_indexed_corpus": None}, # Empty candidates
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_bm25_search_scenarios(self, temp_index_dir, query, candidate_texts, k, expected_results_len, pre_indexed_corpus):
+    async def test_bm25_search_scenarios(self, temp_index_dir, test_case):
         """Test BM25 similarity search scenarios."""
+        query = test_case["query"]
+        candidate_texts = test_case["candidate_texts"]
+        k = test_case["k"]
+        expected_results_len = test_case["expected_results_len"]
+        pre_indexed_corpus = test_case["pre_indexed_corpus"]
+
         embedder = BM25Embedder(temp_index_dir)
 
         if pre_indexed_corpus is not None:
             # If pre_indexed_corpus is provided, means we should use it for pre-indexing
             await embedder.fit_corpus(pre_indexed_corpus)
-        elif candidate_texts is None: # Fallback if no specific pre_indexed_corpus, but candidate_texts is None
+        elif candidate_texts is None:
             # This case handles scenarios where the test expects existing corpus but doesn't specify it.
             # For now, we will assume an empty corpus for this case if no pre_indexed_corpus.
-            pass # Or raise an error if this state is invalid
+            pass  # Or raise an error if this state is invalid
 
         results = await embedder.search_similar(query, candidate_texts, k=k)
 
@@ -284,15 +318,16 @@ class TestIndexerFacade:
             mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
         )
         sample_data = get_sample_tools_data()
-        for tool_data in sample_data:
-            await indexer.index_tool(
-                name=tool_data["name"],
-                description=tool_data["description"],
-                server_name=tool_data["server_name"],
-                params=tool_data["params"],
-                tags=tool_data.get("tags", []),
-                annotations=tool_data.get("annotations", {}),
+        for tool_data_dict in sample_data:
+            tool_data = ToolData(
+                name=tool_data_dict["name"],
+                description=tool_data_dict["description"],
+                server_name=tool_data_dict["server_name"],
+                params=tool_data_dict["params"],
+                tags=tool_data_dict.get("tags", []),
+                annotations=tool_data_dict.get("annotations", {}),
             )
+            await indexer.index_tool(tool_data)
         return indexer
 
     @pytest.mark.parametrize(
@@ -304,7 +339,7 @@ class TestIndexerFacade:
             ("invalid_embedder_type", None, True), # Test case for unknown embedder type
         ],
     )
-    def test_indexer_facade_init_and_embedder_creation_scenarios(
+    def test_init_embedder_creation(
         self, persistence_facade, embedder_type, expected_embedder_class, expect_exception
     ):
         """Test IndexerFacade initialization and correct embedder creation."""
@@ -316,20 +351,41 @@ class TestIndexerFacade:
             assert isinstance(indexer.embedder, expected_embedder_class)
 
     @pytest.mark.parametrize(
-        "name, description, server_name, params, tags, annotations, is_duplicate, expected_store_call, expected_reindex",
+        "tool_data_scenario",
         [
-            ("basic_tool", "Basic description", "server1", None, [], {}, False, True, True),
-            ("tool_with_metadata", "Description with metadata", "server1",
-             {"type": "object", "properties": {"name": {"type": "string"}}},
-             ["compute"], {"category": "compute"}, False, True, True),
-            ("duplicate_tool", "Duplicate description", "server1", None, [], {}, True, False, False),
+            {
+                "name": "basic_tool", "description": "Basic description", "server_name": "server1",
+                "params": None, "tags": [], "annotations": {},
+                "is_duplicate": False, "expected_store_call": True, "expected_reindex": True
+            },
+            {
+                "name": "tool_with_metadata", "description": "Description with metadata", "server_name": "server1",
+                "params": {"type": "object", "properties": {"name": {"type": "string"}}},
+                "tags": ["compute"], "annotations": {"category": "compute"},
+                "is_duplicate": False, "expected_store_call": True, "expected_reindex": True
+            },
+            {
+                "name": "duplicate_tool", "description": "Duplicate description", "server_name": "server1",
+                "params": None, "tags": [], "annotations": {},
+                "is_duplicate": True, "expected_store_call": False, "expected_reindex": False
+            },
         ],
     )
     @pytest.mark.asyncio
-    async def test_indexer_facade_tool_indexing_scenarios(
-        self, mock_persistence, temp_index_dir, name, description, server_name, params, tags, annotations, is_duplicate, expected_store_call, expected_reindex
+    async def test_tool_indexing_scenarios(
+        self, mock_persistence, temp_index_dir, tool_data_scenario
     ):
         """Test various tool indexing scenarios including duplicates."""
+        name = tool_data_scenario["name"]
+        description = tool_data_scenario["description"]
+        server_name = tool_data_scenario["server_name"]
+        params = tool_data_scenario["params"]
+        tags = tool_data_scenario["tags"]
+        annotations = tool_data_scenario["annotations"]
+        is_duplicate = tool_data_scenario["is_duplicate"]
+        expected_store_call = tool_data_scenario["expected_store_call"]
+        expected_reindex = tool_data_scenario["expected_reindex"]
+
         if is_duplicate:
             existing_tool = ToolMetadata(
                 id=1,
@@ -345,7 +401,15 @@ class TestIndexerFacade:
             mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
         )
 
-        await indexer.index_tool(name, description, server_name, params, tags, annotations)
+        tool_data = ToolData(
+            name=name,
+            description=description,
+            server_name=server_name,
+            params=params,
+            tags=tags,
+            annotations=annotations,
+        )
+        await indexer.index_tool(tool_data)
 
         mock_persistence.get_tool_by_hash.assert_called_once()
 
@@ -358,7 +422,7 @@ class TestIndexerFacade:
             assert stored_tool.server_name == server_name
             if params: # Check if params are part of params_json
                 assert stored_tool.params_json is not None
-                assert json.loads(stored_tool.params_json).get("properties") == params.get("properties")
+                assert json.loads(stored_tool.params_json).get("parameters").get("properties") == params.get("properties")
             if tags:
                 assert json.loads(stored_tool.params_json).get("tags") == tags
             if annotations:
@@ -422,7 +486,7 @@ class TestIndexerFacade:
         assert len(indexer.embedder.corpus) == 2
 
     @pytest.mark.asyncio
-    async def test_index_multiple_tools_different_servers(self, temp_indexer_facade):
+    async def test_multi_server_indexing(self, temp_indexer_facade):
         """Test indexing tools from different servers."""
         tools_data = [
             ("tool1", "Description 1", "server-a"),
@@ -449,7 +513,7 @@ class TestIndexerFacade:
         assert len(server_b_tools) == 1
 
     @pytest.mark.asyncio
-    async def test_index_and_search_with_tags(self, temp_indexer_facade):
+    async def test_search_with_tags(self, temp_indexer_facade):
         """Test that tags improve search relevance."""
         # Index tool with relevant tags and more descriptive content
         await temp_indexer_facade.index_tool(
@@ -496,17 +560,29 @@ class TestIndexerFacade:
         assert len(mock_embedder.call_log) > 0
         assert any("embed_text" in call for call in mock_embedder.call_log)
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "query, k, expected_len, expected_tool_name, expected_score_check",
+        "test_case",
         [
-            ("create virtual machine", 2, 2, "create_instance", True),
+            {
+                "query": "create virtual machine",
+                "k": 2,
+                "expected_len": 2,
+                "expected_tool_name": "create_instance",
+                "expected_score_check": True,
+            },
         ],
     )
-    async def test_indexer_facade_search_bm25_basic(
-        self, mock_persistence, temp_index_dir, query, k, expected_len, expected_tool_name, expected_score_check
+    @pytest.mark.asyncio
+    async def test_search_bm25_basic(
+        self, mock_persistence, temp_index_dir, test_case
     ):
         """Test basic BM25 search scenario for IndexerFacade."""
+        query = test_case["query"]
+        k = test_case["k"]
+        expected_len = test_case["expected_len"]
+        expected_tool_name = test_case["expected_tool_name"]
+        expected_score_check = test_case["expected_score_check"]
+
         indexer = IndexerFacade(
             mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
         )
@@ -542,17 +618,27 @@ class TestIndexerFacade:
                 assert abs(results[1].score - 0.574) < 0.01
                 assert results[0].score > results[1].score
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "query, k, expected_len, expected_tool_name",
+        "test_case",
         [
-            ("test query", 3, 1, "test_tool"),
+            {
+                "query": "test query",
+                "k": 3,
+                "expected_len": 1,
+                "expected_tool_name": "test_tool",
+            },
         ],
     )
-    async def test_indexer_facade_search_vector_embedder(
-        self, mock_persistence, temp_index_dir, query, k, expected_len, expected_tool_name
+    @pytest.mark.asyncio
+    async def test_search_vector_embedder(
+        self, mock_persistence, temp_index_dir, test_case
     ):
         """Test vector embedder search scenario for IndexerFacade."""
+        query = test_case["query"]
+        k = test_case["k"]
+        expected_len = test_case["expected_len"]
+        expected_tool_name = test_case["expected_tool_name"]
+
         indexer = IndexerFacade(
             mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
         )
@@ -580,10 +666,13 @@ class TestIndexerFacade:
         mock_persistence.search_similar_tools.assert_called_once()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("query, k", [
-        ("nonexistent query", 5) 
-    ])
-    async def test_indexer_facade_search_no_results(
+    @pytest.mark.parametrize(
+        "query, k, expected_len, expected_tool_name",
+        [
+            ("nonexistent query", 5) 
+        ],
+    )
+    async def test_search_no_results(
         self, mock_persistence, temp_index_dir, query, k
     ):
         """Test search scenario with no results for IndexerFacade."""
@@ -594,18 +683,41 @@ class TestIndexerFacade:
         results = await indexer.search_tools(query, k=k)
         assert results == []
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "query, k, expected_len_min, expected_tool_names, min_score_check, expected_len_max, max_score_check",
+        "test_case",
         [
-            ("create virtual machine", 5, 1, ["create_instance"], True, None, False),
-            ("nonsense random query xyz", 5, None, None, False, 0, True),
+            {
+                "query": "create virtual machine",
+                "k": 5,
+                "expected_len_min": 1,
+                "expected_tool_names": ["create_instance"],
+                "min_score_check": True,
+                "expected_len_max": None,
+                "max_score_check": False,
+            },
+            {
+                "query": "nonsense random query xyz",
+                "k": 5,
+                "expected_len_min": None,
+                "expected_tool_names": None,
+                "min_score_check": False,
+                "expected_len_max": 0,
+                "max_score_check": True,
+            },
         ],
     )
-    async def test_indexer_facade_search_sample_data(
-        self, populated_indexer_facade, query, k, expected_len_min, expected_tool_names, min_score_check, expected_len_max, max_score_check
+    async def test_search_sample_data(
+        self, populated_indexer_facade, test_case
     ):
         """Test sample data search scenarios for IndexerFacade."""
+        query = test_case["query"]
+        k = test_case["k"]
+        expected_len_min = test_case["expected_len_min"]
+        expected_tool_names = test_case["expected_tool_names"]
+        min_score_check = test_case["min_score_check"]
+        expected_len_max = test_case["expected_len_max"]
+        max_score_check = test_case["max_score_check"]
+
         # Use the pre-populated indexer facade from the fixture
         indexer = populated_indexer_facade
         

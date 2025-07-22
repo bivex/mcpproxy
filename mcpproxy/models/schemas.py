@@ -1,7 +1,9 @@
 """Data models and schemas for Smart MCP Proxy."""
 
+import json
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
+from dataclasses import dataclass
 
 from pydantic import BaseModel
 
@@ -61,3 +63,30 @@ class ToolRegistration(BaseModel):
     description: str
     input_schema: dict[str, Any]
     server_name: str
+
+
+@dataclass
+class ToolData:
+    name: str
+    description: str
+    server_name: str
+    params: Optional[dict[str, Any]] = None
+    tags: Optional[list[str]] = None
+    annotations: Any = None
+
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "description": self.description,
+            "server_name": self.server_name,
+            "params": self.params,
+            "tags": self.tags,
+            "annotations": self.annotations
+        }
+
+@dataclass
+class ToolPoolManagerDependencies:
+    indexer: Any
+    persistence: Any
+    config: Any
+    proxy_servers: Any

@@ -3,28 +3,30 @@
 import pytest
 
 from tests.fixtures.data import get_sample_tools_data
+from mcpproxy.models.schemas import ToolData
 
 
-class TestEndToEndIndexingAndSearchFlow:
+class TestEndToEndFlow:
     """Test complete indexing and search flow."""
 
     @pytest.mark.asyncio
-    async def test_end_to_end_indexing_and_search(self, temp_indexer_facade):
+    async def test_e2e_indexing_and_search(self, temp_indexer_facade):
         """Test complete flow from indexing to search."""
         sample_data = get_sample_tools_data()
 
         # Step 1: Index all sample tools
         indexed_tools = []
-        for tool_data in sample_data:
-            await temp_indexer_facade.index_tool(
-                name=tool_data["name"],
-                description=tool_data["description"],
-                server_name=tool_data["server_name"],
-                params=tool_data["params"],
-                tags=tool_data.get("tags", []),
-                annotations=tool_data.get("annotations", {}),
+        for tool_data_dict in sample_data:
+            tool_data = ToolData(
+                name=tool_data_dict["name"],
+                description=tool_data_dict["description"],
+                server_name=tool_data_dict["server_name"],
+                params=tool_data_dict["params"],
+                tags=tool_data_dict.get("tags", []),
+                annotations=tool_data_dict.get("annotations", {}),
             )
-            indexed_tools.append(tool_data["name"])
+            await temp_indexer_facade.index_tool(tool_data)
+            indexed_tools.append(tool_data_dict["name"])
 
         # Step 2: Verify tools are stored in persistence
         all_tools = await temp_indexer_facade.persistence.get_all_tools()
