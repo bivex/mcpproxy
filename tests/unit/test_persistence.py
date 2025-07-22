@@ -71,7 +71,7 @@ class TestDatabaseManager:
         assert {tool.name for tool in all_tools} == set(expected_names)
 
     @pytest.mark.asyncio
-    async def test_get_tools_by_server_company_api(self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list):
+    async def test_get_tools_by_server_company(self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list):
         """Test retrieving tools by server name for 'company-api'."""
         db = in_memory_db
         await db.insert_tool(sample_tool_metadata)
@@ -84,7 +84,7 @@ class TestDatabaseManager:
         assert all(tool.server_name == "company-api" for tool in tools_by_server)
 
     @pytest.mark.asyncio
-    async def test_get_tools_by_server_storage_api(self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list):
+    async def test_get_tools_by_server_storage(self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list):
         """Test retrieving tools by server name for 'storage-api'."""
         db = in_memory_db
         await db.insert_tool(sample_tool_metadata)
