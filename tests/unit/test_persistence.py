@@ -9,10 +9,9 @@ import numpy as np
 import pytest
 from unittest.mock import AsyncMock
 
-from mcpproxy.models.schemas import SearchResult
+from mcpproxy.models.schemas import EmbedderType, SearchResult, ToolMetadata, ToolRegistration
 from mcpproxy.persistence.db import DatabaseManager
-from mcpproxy.indexer.embedders.faiss_store import FaissStore
-from mcpproxy.models.tool_metadata import ToolMetadata
+from mcpproxy.persistence.faiss_store import FaissStore
 
 
 class TestDatabaseManager:

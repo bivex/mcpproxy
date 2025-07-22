@@ -73,8 +73,8 @@ class TestToolPoolManagerUnit:
         mock_truncate_output_fn,
     ):
         """Fixture for a ToolPoolManager instance with mocked dependencies."""
-        with patch("mcpproxy.server.tool_pool_manager.ToolPoolManager._enforce_tool_pool_limit", new_callable=AsyncMock) as mock_enforce_limit,
-             patch("mcpproxy.server.tool_pool_manager.ToolPoolManager._evict_tool", new_callable=AsyncMock) as mock_evict_tool,
+        with patch("mcpproxy.server.tool_pool_manager.ToolPoolManager._enforce_tool_pool_limit", new_callable=AsyncMock) as mock_enforce_limit, \
+             patch("mcpproxy.server.tool_pool_manager.ToolPoolManager._evict_tool", new_callable=AsyncMock) as mock_evict_tool, \
              patch("mcpproxy.server.tool_pool_manager.ToolPoolManager._register_proxy_tool", new_callable=AsyncMock) as mock_register_proxy_tool:
 
             manager = ToolPoolManager(
