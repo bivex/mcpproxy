@@ -73,6 +73,9 @@ class ToolData:
     params: Optional[dict[str, Any]] = None
     tags: Optional[list[str]] = None
     annotations: Any = None
+    last_used_at: Optional[Any] = None
+    embedding: Optional[list[float]] = None
+    id: Optional[int] = None
 
     def to_dict(self):
         return {

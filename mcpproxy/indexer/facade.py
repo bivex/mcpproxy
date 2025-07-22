@@ -1,9 +1,10 @@
 """Indexer and search facade."""
 
 import os
-from typing import Any
+from typing import Any, Optional
 import json
 import math
+import hashlib # Import hashlib for hashing
 
 from mcpproxy.models.schemas import ToolMetadata, SearchResult, ToolData, EmbedderType
 from mcpproxy.persistence.facade import PersistenceFacade
@@ -49,22 +50,24 @@ class IndexerFacade:
     async def index_tool(
         self, tool_data: ToolData
     ) -> None:
-        """
-        Indexes a single tool.
-
-        If the tool already exists and has not changed, it skips re-indexing.
-        Otherwise, it processes and stores the tool.
+        """Indexes a tool by storing its metadata and embedding.
+        If a tool with the same hash exists and is unchanged, it's skipped.
         """
         server_name = tool_data.server_name
         # Generate a hash for the current tool data to detect changes
-        tool_hash = compute_tool_hash(tool_data)
+        tool_hash = compute_tool_hash(
+            tool_data.name,
+            tool_data.description,
+            tool_data.params
+        )
 
         # Check if the tool exists and is unchanged
-        if await self._is_tool_unchanged(tool_hash):
+        existing_tool_metadata = await self._is_tool_unchanged(tool_hash)
+        if existing_tool_metadata:
             return
 
         # Process and store the tool
-        await self._process_and_store_tool(tool_data, tool_hash, server_name)
+        await self._process_and_store_tool(tool_data, tool_hash, server_name, existing_tool_metadata)
 
     async def index_tool_from_object(self, tool_obj: Any, server_name: str) -> None:
         """
@@ -74,39 +77,69 @@ class IndexerFacade:
         tool_data = self._extract_tool_data_from_obj(tool_obj, server_name)
         await self.index_tool(tool_data)
 
-    async def _is_tool_unchanged(self, tool_hash: str) -> bool:
+    async def _is_tool_unchanged(self, tool_hash: str) -> ToolMetadata | None:
         """Check if the tool exists and its hash is unchanged in the database."""
-        return await self.persistence.get_tool_by_hash(tool_hash) is not None
+        return await self.persistence.get_tool_by_hash(tool_hash)
 
     async def _process_and_store_tool(
-        self, tool_data: ToolData, tool_hash: str, server_name: str
+        self, tool_data: ToolData, tool_hash: str, server_name: str, existing_tool_metadata: ToolMetadata | None
     ) -> None:
         """Processes tool data, stores it, and updates the index."""
         # Sanitize tool name for consistent indexing and searching
-        tool_data.name = sanitize_tool_name(tool_data.name)
+        tool_data.name = sanitize_tool_name(server_name, tool_data.name)
 
-        # Index the tool content
-        tool_content_to_index = f"{tool_data.name} {tool_data.description} {tool_data.args}"
+        # Index the tool content (vector embedders only)
+        tool_content_to_index = f"{tool_data.name} {tool_data.description} {tool_data.params}"
         if isinstance(self.embedder, BM25Embedder):
-            await self.embedder.add_texts_to_corpus(
-                [tool_content_to_index], [tool_data.id]
-            )
+            await self.embedder.embed_text(tool_content_to_index) # Use embed_text for BM25
+            # For BM25, no vector is stored in ToolMetadata or passed to persistence facade methods
+            # Directly interact with the database manager
+            if existing_tool_metadata:
+                tool = existing_tool_metadata
+                tool.name = tool_data.name # Name might have been sanitized
+                tool.description = tool_data.description
+                tool.params_json = self._serialize_params_to_json(tool_data.params)
+                tool.hash = tool_hash
+                tool.server_name = server_name # Ensure server_name is updated if it can change
+                tool.last_used_at = tool_data.last_used_at
+                await self.persistence.db.update_tool(tool)
+            else:
+                tool = ToolMetadata(
+                    name=tool_data.name,
+                    description=tool_data.description,
+                    params_json=self._serialize_params_to_json(tool_data.params),
+                    hash=tool_hash,
+                    server_name=server_name,
+                    last_used_at=tool_data.last_used_at,
+                )
+                tool_id = await self.persistence.db.insert_tool(tool)
+                tool.id = tool_id # Update the tool_data object with the new ID
         else:
             vector = await self.embedder.embed_text(tool_content_to_index)
             tool_data.embedding = vector.tolist()  # Store as list for JSON serialization
 
-        # Store minimal metadata in persistence layer (only for hash-based change detection)
-        tool = ToolMetadata(
-            name=tool_data.name,
-            description=tool_data.description,
-            args=self._serialize_params_to_json(tool_data.args),
-            hash=tool_hash,
-            id=tool_data.id,
-            server_name=server_name,
-            last_used_at=tool_data.last_used_at,
-            embedding=tool_data.embedding,
-        )
-        await self.persistence.upsert_tool(tool)
+            # Store minimal metadata in persistence layer (only for hash-based change detection)
+            if existing_tool_metadata:
+                tool = existing_tool_metadata
+                tool.name = tool_data.name
+                tool.description = tool_data.description
+                tool.params_json = self._serialize_params_to_json(tool_data.params)
+                tool.hash = tool_hash
+                tool.server_name = server_name
+                tool.last_used_at = tool_data.last_used_at
+                tool.embedding = tool_data.embedding
+                await self.persistence.update_tool_with_vector(tool, vector)
+            else:
+                tool = ToolMetadata(
+                    name=tool_data.name,
+                    description=tool_data.description,
+                    params_json=self._serialize_params_to_json(tool_data.params),
+                    hash=tool_hash,
+                    server_name=server_name,
+                    last_used_at=tool_data.last_used_at,
+                    embedding=tool_data.embedding,
+                )
+                await self.persistence.store_tool_with_vector(tool, vector)
         self._needs_reindex = True  # Mark for re-indexing for BM25 after updates
 
     def _serialize_params_to_json(self, params: dict[str, Any] | None) -> str | None:
@@ -115,13 +148,18 @@ class IndexerFacade:
     def _extract_tool_data_from_obj(self, tool_obj: Any, server_name: str) -> ToolData:
         # Placeholder for extracting ToolData from a tool object.
         # This will depend on the actual structure of tool_obj.
+        # Generate a unique ID for ToolData as ProxyTool does not have an 'id' attribute.
+        unique_string = f"{tool_obj.name}-{tool_obj.description}-{server_name}"
+        generated_id = int(hashlib.sha256(unique_string.encode()).hexdigest(), 16) % (2**31 - 1) # Generate a positive integer hash
+        
         return ToolData(
-            id=tool_obj.id,
+            id=generated_id,
             name=tool_obj.name,
             description=tool_obj.description,
-            args=tool_obj.args,
+            params=getattr(tool_obj, 'parameters', {}), # Use 'parameters' as per FastMCP Tool object, default to empty dict
             server_name=server_name,
-            last_used_at=tool_obj.last_used_at,
+            last_used_at=getattr(tool_obj, 'last_used_at', None), # Safely get last_used_at, default to None
+            embedding=None # Explicitly set embedding to None initially
         )
 
     def _get_annotations_string(self, annotations: Any) -> str | None:
@@ -134,10 +172,10 @@ class IndexerFacade:
         all_tools = await self.persistence.get_all_tools()
         if isinstance(self.embedder, BM25Embedder):
             corpus = [
-                f"{tool.name} {tool.description} {tool.args}" for tool in all_tools
+                f"{tool.name} {tool.description} {tool.params_json}" for tool in all_tools
             ]
-            ids = [tool.id for tool in all_tools]
-            await self.embedder.add_texts_to_corpus(corpus, ids)
+            # The BM25Embedder.fit_corpus method now handles building the index
+            await self.embedder.fit_corpus(corpus)
         # For vector embedders, embeddings are stored directly with the tool metadata,
         # so no separate re-indexing of the embedder is needed.
         self._needs_reindex = False
