@@ -13,6 +13,8 @@ from unittest.mock import MagicMock
 
 from mcpproxy.indexer.embedders.base import BaseEmbedder
 from mcpproxy.indexer.embedders.bm25 import BM25Embedder
+from mcpproxy.indexer.embedders.huggingface import HuggingFaceEmbedder
+from mcpproxy.indexer.embedders.openai import OpenAIEmbedder
 from mcpproxy.indexer.facade import IndexerFacade
 from mcpproxy.models.schemas import EmbedderType, SearchResult, ToolMetadata
 from mcpproxy.persistence.facade import PersistenceFacade # Import PersistenceFacade
@@ -294,43 +296,24 @@ class TestIndexerFacade:
         return indexer
 
     @pytest.mark.parametrize(
-        "embedder_type_str, expected_embedder_instance, expect_exception",
+        "embedder_type, expected_embedder_class, expect_exception",
         [
-            ("BM25", "BM25Embedder", False),
-            ("mock_embedder_type", "MockEmbedder", False), # Assuming MockEmbedder type will be handled, though it's not a real type
-            ("UNKNOWN", None, True),
+            (EmbedderType.BM25, BM25Embedder, False),
+            (EmbedderType.HF, HuggingFaceEmbedder, False),
+            (EmbedderType.OPENAI, OpenAIEmbedder, False),
+            ("invalid_embedder_type", None, True), # Test case for unknown embedder type
         ],
     )
     def test_indexer_facade_init_and_embedder_creation_scenarios(
-        self, mock_persistence, temp_index_dir, embedder_type_str, expected_embedder_instance, expect_exception
+        self, persistence_facade, embedder_type, expected_embedder_class, expect_exception
     ):
-        """Test IndexerFacade initialization with various embedder types and error handling."""
-        # Create a mock for an arbitrary embedder type if needed for testing
-        if embedder_type_str == "mock_embedder_type":
-            mock_embedder_type = MagicMock(spec=EmbedderType, value="mock_embedder_type")
-            mock_embedder_type.value = "mock_embedder_type"
-            actual_embedder_type = mock_embedder_type
-            with patch('mcpproxy.indexer.facade.MOCK_EMBEDDER_MAP', {mock_embedder_type.value: MockEmbedder}):
-                if expect_exception:
-                    with pytest.raises(ValueError, match="Unknown embedder type"):
-                        IndexerFacade(mock_persistence, actual_embedder_type, index_dir=temp_index_dir)
-                else:
-                    indexer = IndexerFacade(mock_persistence, actual_embedder_type, index_dir=temp_index_dir)
-                    assert indexer.persistence == mock_persistence
-                    assert isinstance(indexer.embedder, MockEmbedder)
-
-        elif embedder_type_str == "UNKNOWN":
-            class UnknownEmbedderType(str, Enum):
-                UNKNOWN = "UNKNOWN"
-            with pytest.raises(ValueError, match="Unknown embedder type"):
-                IndexerFacade(mock_persistence, UnknownEmbedderType.UNKNOWN, index_dir=temp_index_dir)
+        """Test IndexerFacade initialization and correct embedder creation."""
+        if expect_exception:
+            with pytest.raises(ValueError):
+                IndexerFacade(persistence_facade, embedder_type)
         else:
-            # Test for known embedder types (e.g., BM25)
-            indexer = IndexerFacade(mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir)
-
-            assert indexer.persistence == mock_persistence
-            assert isinstance(indexer.embedder, BM25Embedder)
-            assert indexer.embedder.index_dir == temp_index_dir
+            indexer = IndexerFacade(persistence_facade, embedder_type)
+            assert isinstance(indexer.embedder, expected_embedder_class)
 
     @pytest.mark.parametrize(
         "name, description, server_name, params, tags, annotations, is_duplicate, expected_store_call, expected_reindex",

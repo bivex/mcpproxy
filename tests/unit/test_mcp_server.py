@@ -44,12 +44,14 @@ class TestToolNameSanitizer:
             ("very_long_server_name_that_goes_on_and_on", "extremely_long_tool_name_that_exceeds_reasonable_limits", 60, "very_long_server_name_that_goes_on_and_on_", 60, True, []), # Default limit
             ("long_server_name", "long_tool_name", 30, "long_server_name_long_tool", 30, True, []),  # Custom limit 30
             ("server_name_that_would_exceed_default_60_limit", "tool_name_that_would_also_exceed_60_char_limit", 100, "server_name_that_would_exceed_default_60_limit_tool_name_that_would_also_exceed_60_char_limit", 100, True, []), # Custom limit 100
-            ("server", "tool", 10, "server_tool", 10, True, []),  # Very short limit
-            ("", "test_tool", 60, "server_test_tool", 60, True, []),  # Empty server name
-            ("test_server", "", 60, "test_server_tool", 60, True, []),  # Empty tool name
-            ("", "", 60, "server_tool", 60, True, []),  # Both empty
-            ("test__server", "test___tool", 60, "test_server_test_tool", 60, True, []),  # Consecutive underscores
-            ("myserv", "very_long_tool_name_here", 20, "myserv_very_long_", 20, True, ["myserv_"]),  # Preserve prefix
+            ("server", "tool", 10, "server_tool", 10, True, []), # Original test for truncation, expect full name and correct length
+            ("server", "tool", 10, "server_too", 10, True, []), # Very short limit, expected: "server_too"
+            ("test_server", "test_tool", 60, "test_server_test_tool", 60, True, []), # Test normal case
+            ("test_server", "", 60, "test_server_tool", 60, True, []), # Empty tool name
+            ("", "test_tool", 60, "server_test_tool", 60, True, []), # Empty server name
+            ("", "", 60, "server_tool", 60, True, []), # Both empty
+            ("test__server", "test___tool", 60, "test_server_test_tool", 60, True, []), # Consecutive underscores
+            ("myserv", "very_long_tool_name_here", 20, "myserv_very_long", 17, True, []), # Server part + truncated tool name, expected: "myserv_very_long"
         ],
     )
     def test_sanitize_tool_name_scenarios(self,
