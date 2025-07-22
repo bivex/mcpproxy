@@ -32,6 +32,7 @@ class ProxyConfig(BaseModel):
     hf_model: str | None = None
     top_k: int = 5
     tool_name_limit: int = 60
+    tools_limit: int = 15
 
 
 class ToolMetadata(BaseModel):

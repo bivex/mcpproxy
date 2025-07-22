@@ -80,4 +80,6 @@ def sample_proxy_config() -> ProxyConfig:
         embedder=EmbedderType.BM25,
         hf_model="sentence-transformers/all-MiniLM-L6-v2",
         top_k=5,
+        tool_name_limit=60,
+        tools_limit=15,
     ) 

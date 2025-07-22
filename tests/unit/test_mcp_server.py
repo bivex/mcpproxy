@@ -12,19 +12,21 @@ from mcpproxy.utils.name_sanitization.name_sanitizer import sanitize_tool_name #
 class TestSmartMCPProxyServer:
     """Test cases for SmartMCPProxyServer."""
 
-    def create_test_config(self, tool_name_limit: int = 60) -> ProxyConfig:
+    def create_test_config(self, tool_name_limit: int = 60, tools_limit: int = 15) -> ProxyConfig:
         """Create a test configuration with specified tool name limit."""
         return ProxyConfig(
             mcp_servers={},
             embedder=EmbedderType.BM25,
             tool_name_limit=tool_name_limit,
+            tools_limit=tools_limit,
         )
 
-    def create_mock_server(self, tool_name_limit: int = 60) -> SmartMCPProxyServer:
+    def create_mock_server(self, tool_name_limit: int = 60, tools_limit: int = 15) -> SmartMCPProxyServer:
         """Create a mock server instance with test configuration."""
         with patch("mcpproxy.server.mcp_server.ConfigLoader") as mock_loader:
             mock_loader.return_value.load_config.return_value = self.create_test_config(
-                tool_name_limit
+                tool_name_limit,
+                tools_limit,
             )
             server = SmartMCPProxyServer("test_config.json")
             return server

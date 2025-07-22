@@ -1,7 +1,7 @@
 """Integration tests for persistence layer integration."""
 
 import pytest
-from mcpproxy.indexer.bm25 import BM25Embedder
+from mcpproxy.indexer.embedders.bm25 import BM25Embedder
 
 
 class TestPersistenceLayerIntegration:

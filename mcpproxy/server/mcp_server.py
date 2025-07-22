@@ -56,7 +56,7 @@ class SmartMCPProxyServer:
         self.port = int(os.getenv("MCPPROXY_PORT", "8000"))
 
         # Tool pool limit configuration
-        self.tools_limit = int(os.getenv("MCPPROXY_TOOLS_LIMIT", "15"))
+        self.tools_limit = int(os.getenv("MCPPROXY_TOOLS_LIMIT", str(self.config.tools_limit)))
 
         # Output truncation configuration
         truncate_len = os.getenv("MCPPROXY_TRUNCATE_OUTPUT_LEN")
@@ -78,6 +78,12 @@ class SmartMCPProxyServer:
             self.tool_name_limit = self.config.tool_name_limit
         else:
             self.tool_name_limit = 60  # Default value
+
+        # Set tools_limit based on config or env
+        if self.config.tools_limit is not None:
+            self.tools_limit = self.config.tools_limit
+        else:
+            self.tools_limit = 15  # Default value
 
         # Will be initialized in lifespan
         self.persistence: PersistenceFacade | None = None

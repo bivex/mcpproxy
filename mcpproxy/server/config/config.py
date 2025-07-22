@@ -41,6 +41,7 @@ class ConfigLoader:
         hf_model = os.getenv("MCPPROXY_HF_MODEL")
         top_k = int(os.getenv("MCPPROXY_TOP_K", str(TOP_K_DEFAULT)))
         tool_name_limit = int(os.getenv("MCPPROXY_TOOL_NAME_LIMIT", "60"))
+        tools_limit = int(os.getenv("MCPPROXY_TOOLS_LIMIT", "15"))
 
         return ProxyConfig(
             mcp_servers=mcp_servers,
@@ -48,4 +49,5 @@ class ConfigLoader:
             hf_model=hf_model,
             top_k=top_k,
             tool_name_limit=tool_name_limit,
+            tools_limit=tools_limit,
         )

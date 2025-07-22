@@ -49,6 +49,7 @@ class TestToolPoolManagerUnit:
             hf_model=None,
             top_k=5,
             tool_name_limit=60,
+            tools_limit=15,
         )
 
     @pytest.fixture
