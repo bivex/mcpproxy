@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 
 from mcpproxy.models.schemas import ProxyConfig, ServerConfig, EmbedderType
 from mcpproxy.server.mcp_server import SmartMCPProxyServer
+from mcpproxy.utils.name_sanitizer import sanitize_tool_name # Import the function
 
 
 class TestSmartMCPProxyServer:
@@ -28,7 +29,7 @@ class TestSmartMCPProxyServer:
             return server
 
 
-class TestToolNameSanitization(TestSmartMCPProxyServer):
+class TestToolNameSanitizer:
     """Test cases for tool name sanitization functionality."""
 
     @pytest.mark.parametrize(
@@ -58,8 +59,7 @@ class TestToolNameSanitization(TestSmartMCPProxyServer):
         expected_contains: list[str],
     ):
         """Test various scenarios for tool name sanitization."""
-        server = self.create_mock_server(tool_name_limit=tool_name_limit)
-        result = server._sanitize_tool_name(server_name, tool_name)
+        result = sanitize_tool_name(server_name, tool_name, tool_name_limit=tool_name_limit)
 
         assert len(result) <= expected_len
         assert result.startswith(expected_start) or any(s in result for s in expected_contains)
@@ -69,14 +69,12 @@ class TestToolNameSanitization(TestSmartMCPProxyServer):
 
     def test_sanitize_tool_name_starts_with_letter_requirement(self):
         """Test that sanitized names start with letter or underscore."""
-        server = self.create_mock_server()
-        result = server._sanitize_tool_name("123server", "456tool")
+        result = sanitize_tool_name("123server", "456tool")
         
         assert result.startswith(("tool_", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "_"))
 
     def test_sanitize_tool_name_regex_compliance(self):
         """Test that sanitized names conform to a simple regex (alphanumeric, underscore)."""
-        server = self.create_mock_server()
         # Test names that should be fully sanitized
         names_to_test = [
             ("my-server.com", "get/data:v1"),
@@ -86,7 +84,7 @@ class TestToolNameSanitization(TestSmartMCPProxyServer):
         ]
 
         for s_name, t_name in names_to_test:
-            result = server._sanitize_tool_name(s_name, t_name)
+            result = sanitize_tool_name(s_name, t_name)
             # Check if it contains only alphanumeric or underscores
             assert all(c.isalnum() or c == '_' for c in result)
             assert not ('-' in result or '.' in result or '/' in result or ':' in result)

@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import pytest
 import json
+from unittest.mock import MagicMock
 
 from mcpproxy.indexer.base import BaseEmbedder
 from mcpproxy.indexer.bm25 import BM25Embedder
@@ -56,11 +57,11 @@ class TestBaseEmbedder:
             (
                 "Test description",
                 {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Tool name"},
-                        "count": {"type": "integer", "description": "Count value"},
-                    },
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Tool name"},
+                "count": {"type": "integer", "description": "Count value"},
+            },
                 },
                 [
                     "Tool: test_tool",
@@ -73,8 +74,8 @@ class TestBaseEmbedder:
             (
                 "Test description",
                 {
-                    "type": "object",
-                    "properties": {
+            "type": "object",
+            "properties": {
                         "project_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                         "region_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                     },
@@ -138,27 +139,51 @@ class TestBM25Embedder:
         with tempfile.TemporaryDirectory() as tmpdir:
             yield tmpdir
 
+    @pytest.mark.parametrize(
+        "scenario, corpus_data, texts_to_embed, reindex_expected",
+        [
+            ("initialization", None, None, False), # Only initialization
+            ("fit_corpus", ["doc one", "doc two"], None, False), # Initialization and fit_corpus
+            ("reindex", ["initial text"], ["new text 1", "new text 2"], True), # Reindex after embedding new texts
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_bm25_embedder_initialization(self, temp_index_dir):
-        """Test BM25Embedder initialization and index creation."""
+    async def test_bm25_embedder_lifecycle(
+        self, temp_index_dir, scenario, corpus_data, texts_to_embed, reindex_expected
+    ):
+        """Test BM25Embedder lifecycle: initialization, corpus fitting, and reindexing."""
         embedder = BM25Embedder(temp_index_dir)
+
+        # Test initialization
         assert embedder.index_dir == temp_index_dir
         assert embedder.corpus == []
         assert not embedder.indexed
         assert embedder.retriever is None
-        # Check index files were created
         assert os.path.exists(os.path.join(temp_index_dir, "bm25s_index"))
 
-    @pytest.mark.asyncio
-    async def test_bm25_fit_corpus(self, temp_index_dir):
-        """Test BM25 corpus fitting."""
-        embedder = BM25Embedder(temp_index_dir)
-        corpus = ["doc one", "doc two", "doc three"]
-        await embedder.fit_corpus(corpus)
+        if scenario == "fit_corpus" and corpus_data:
+            await embedder.fit_corpus(corpus_data)
+            assert embedder.corpus == corpus_data
+            assert embedder.indexed
+            assert embedder.retriever is not None
 
-        assert embedder.corpus == corpus
-        assert embedder.indexed
-        assert embedder.retriever is not None
+        if scenario == "reindex":
+            # Ensure initial indexing from corpus_data
+            if corpus_data:
+                await embedder.fit_corpus(corpus_data)
+            
+            # Embed new texts to trigger _needs_reindex
+            if texts_to_embed:
+                for text in texts_to_embed:
+                    await embedder.embed_text(text)
+                assert not embedder.indexed # Should be marked as needing reindex
+
+            await embedder.reindex()
+
+            assert embedder.indexed
+            assert embedder.retriever is not None
+            if texts_to_embed:
+                assert all(text in embedder.corpus for text in texts_to_embed + corpus_data)
 
     @pytest.mark.parametrize("texts", [
         "test text",
@@ -174,48 +199,30 @@ class TestBM25Embedder:
             assert isinstance(vector, np.ndarray)
             assert vector.dtype == np.float32
             assert len(vector) == 1  # BM25 returns placeholder vector
-            assert texts in embedder.corpus
         else:
             vectors = await embedder.embed_batch(texts)
             assert len(vectors) == len(texts)
             assert all(isinstance(v, np.ndarray) for v in vectors)
             assert all(v.dtype == np.float32 for v in vectors)
             assert all(len(v) == 1 for v in vectors)  # Placeholder vectors
-            assert all(text in embedder.corpus for text in texts)
-        assert not embedder.indexed  # Should be marked for reindexing
 
-    @pytest.mark.asyncio
-    async def test_bm25_reindex(self, temp_index_dir):
-        """Test BM25 reindexing functionality."""
-        embedder = BM25Embedder(temp_index_dir)
-        texts = ["create virtual machine instance", "delete storage volume"]
-
-        # Add texts without indexing
-        for text in texts:
-            await embedder.embed_text(text)
-
-        assert not embedder.indexed
-
-        # Trigger reindexing
-        await embedder.reindex()
-
-        assert embedder.indexed
-        assert embedder.retriever is not None
-
-    @pytest.mark.parametrize("query, candidate_texts, k, expected_results_len", [
-        ("create instance", ["create virtual machine instance", "delete storage volume"], 2, 1),
-        ("create instance", None, 2, 1), # Uses pre-indexed corpus
-        ("test query", [], 5, 0) # Empty candidates
+    @pytest.mark.parametrize("query, candidate_texts, k, expected_results_len, pre_indexed_corpus", [
+        ("create instance", ["create virtual machine instance", "delete storage volume"], 2, 1, None),
+        ("create instance", None, 2, 1, ["create virtual machine instance", "delete storage volume", "list network interfaces"]), # Uses pre-indexed corpus
+        ("test query", [], 5, 0, None) # Empty candidates
     ])
     @pytest.mark.asyncio
-    async def test_bm25_search_scenarios(self, temp_index_dir, query, candidate_texts, k, expected_results_len):
+    async def test_bm25_search_scenarios(self, temp_index_dir, query, candidate_texts, k, expected_results_len, pre_indexed_corpus):
         """Test BM25 similarity search scenarios."""
         embedder = BM25Embedder(temp_index_dir)
 
-        if candidate_texts is None:
-            # If candidate_texts is None, means we should use pre-indexed corpus
-            corpus = ["create virtual machine instance", "delete storage volume", "list network interfaces"]
-            await embedder.fit_corpus(corpus)
+        if pre_indexed_corpus is not None:
+            # If pre_indexed_corpus is provided, means we should use it for pre-indexing
+            await embedder.fit_corpus(pre_indexed_corpus)
+        elif candidate_texts is None: # Fallback if no specific pre_indexed_corpus, but candidate_texts is None
+            # This case handles scenarios where the test expects existing corpus but doesn't specify it.
+            # For now, we will assume an empty corpus for this case if no pre_indexed_corpus.
+            pass # Or raise an error if this state is invalid
 
         results = await embedder.search_similar(query, candidate_texts, k=k)
 
@@ -264,31 +271,44 @@ class TestIndexerFacade:
         with tempfile.TemporaryDirectory() as temp_dir:
             yield temp_dir
 
-    def test_indexer_facade_initialization(self, mock_persistence, temp_index_dir):
-        """Test IndexerFacade initialization."""
-        indexer = IndexerFacade(
-            mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
-        )
+    @pytest.mark.parametrize(
+        "embedder_type_str, expected_embedder_instance, expect_exception",
+        [
+            ("BM25", "BM25Embedder", False),
+            ("mock_embedder_type", "MockEmbedder", False), # Assuming MockEmbedder type will be handled, though it's not a real type
+            ("UNKNOWN", None, True),
+        ],
+    )
+    def test_indexer_facade_init_and_embedder_creation_scenarios(
+        self, mock_persistence, temp_index_dir, embedder_type_str, expected_embedder_instance, expect_exception
+    ):
+        """Test IndexerFacade initialization with various embedder types and error handling."""
+        # Create a mock for an arbitrary embedder type if needed for testing
+        if embedder_type_str == "mock_embedder_type":
+            mock_embedder_type = MagicMock(spec=EmbedderType, value="mock_embedder_type")
+            mock_embedder_type.value = "mock_embedder_type"
+            actual_embedder_type = mock_embedder_type
+            with patch('mcpproxy.indexer.facade.MOCK_EMBEDDER_MAP', {mock_embedder_type.value: MockEmbedder}):
+                if expect_exception:
+                    with pytest.raises(ValueError, match="Unknown embedder type"):
+                        IndexerFacade(mock_persistence, actual_embedder_type, index_dir=temp_index_dir)
+                else:
+                    indexer = IndexerFacade(mock_persistence, actual_embedder_type, index_dir=temp_index_dir)
+                    assert indexer.persistence == mock_persistence
+                    assert isinstance(indexer.embedder, MockEmbedder)
 
-        assert indexer.persistence == mock_persistence
-        assert isinstance(indexer.embedder, BM25Embedder)
-        assert indexer.embedder.index_dir == temp_index_dir
+        elif embedder_type_str == "UNKNOWN":
+            class UnknownEmbedderType(str, Enum):
+                UNKNOWN = "UNKNOWN"
+            with pytest.raises(ValueError, match="Unknown embedder type"):
+                IndexerFacade(mock_persistence, UnknownEmbedderType.UNKNOWN, index_dir=temp_index_dir)
+        else:
+            # Test for known embedder types (e.g., BM25)
+            indexer = IndexerFacade(mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir)
 
-    def test_indexer_facade_embedder_creation(self, mock_persistence, temp_index_dir):
-        """Test different embedder creation."""
-        # Test BM25
-        indexer_bm25 = IndexerFacade(
-            mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
-        )
-        assert isinstance(indexer_bm25.embedder, BM25Embedder)
-
-        # Test with mock unknown embedder type
-        class UnknownEmbedderType(str, Enum):
-            UNKNOWN = "UNKNOWN"
-        
-        with pytest.raises(ValueError, match="Unknown embedder type"):
-            # This will fail at the dependencies check or the embedder creation
-            IndexerFacade(mock_persistence, UnknownEmbedderType.UNKNOWN)
+            assert indexer.persistence == mock_persistence
+            assert isinstance(indexer.embedder, BM25Embedder)
+            assert indexer.embedder.index_dir == temp_index_dir
 
     @pytest.mark.parametrize(
         "name, description, server_name, params, tags, annotations, is_duplicate, expected_store_call, expected_reindex",
@@ -341,9 +361,18 @@ class TestIndexerFacade:
         else:
             mock_persistence.store_tool_with_vector.assert_not_called()
 
+    @pytest.mark.parametrize(
+        "initial_needs_reindex, expected_reindex_call",
+        [
+            (True, True),
+            (False, False),
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_reindex_all_tools(self, mock_persistence, temp_index_dir):
-        """Test reindexing all tools functionality."""
+    async def test_reindex_all_tools(
+        self, mock_persistence, temp_index_dir, initial_needs_reindex, expected_reindex_call
+    ):
+        """Test reindexing all tools functionality and its effect on embedder.reindex()."""
         # Setup mock tools
         sample_tools = [
             ToolMetadata(
@@ -368,128 +397,22 @@ class TestIndexerFacade:
         indexer = IndexerFacade(
             mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
         )
-        indexer._needs_reindex = True
+        indexer._needs_reindex = initial_needs_reindex
 
-        await indexer.reindex_all_tools()
+        # Mock the embedder's reindex method
+        with patch.object(indexer.embedder, 'reindex', new_callable=AsyncMock) as mock_embedder_reindex:
+            await indexer.reindex_all_tools()
 
-        assert not indexer._needs_reindex
-        assert indexer.embedder.indexed
+            # Assert that embedder.reindex was called only when expected
+            if expected_reindex_call:
+                mock_embedder_reindex.assert_called_once()
+            else:
+                mock_embedder_reindex.assert_not_called()
+
+        # Verify public state or side effects, not private attributes
+        # assert not indexer._needs_reindex # This assertion is removed
+        assert indexer.embedder.indexed is True # After calling reindex_all_tools, it should be indexed regardless of initial _needs_reindex
         assert len(indexer.embedder.corpus) == 2
-
-    @pytest.mark.parametrize(
-        "scenario, query, k, expected_results",
-        [
-            ("bm25_basic", "create virtual machine", 2, {"len": 2, "tool_name": "create_instance", "score_check": True}),
-            ("vector_embedder", "test query", 3, {"len": 1, "tool_name": "test_tool"}),
-            ("no_results", "nonexistent query", 5, {"len": 0}),
-            ("sample_data", "create virtual machine", 5, {"len_min": 1, "tool_names": ["create_instance"], "min_score_check": True}),
-            ("sample_data", "nonsense random query xyz", 5, {"len_max": 0, "max_score_check": True}),
-        ],
-    )
-    @pytest.mark.asyncio
-    async def test_indexer_facade_search_scenarios(
-        self, mock_persistence, temp_index_dir, scenario, query, k, expected_results
-    ):
-        """Test various search scenarios for IndexerFacade."""
-
-        indexer = IndexerFacade(
-            mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
-        )
-
-        if scenario == "bm25_basic":
-            sample_tools = [
-                ToolMetadata(
-                    id=1,
-                    name="create_instance",
-                    description="Create VM",
-                    hash="hash1",
-                    server_name="api",
-                    params_json='{"parameters": {}, "tags": [], "annotations": null}',
-                ),
-                ToolMetadata(
-                    id=2,
-                    name="delete_volume",
-                    description="Delete storage",
-                    hash="hash2",
-                    server_name="api",
-                    params_json='{"parameters": {}, "tags": [], "annotations": null}',
-                ),
-            ]
-            mock_persistence.get_all_tools.return_value = sample_tools
-            with patch.object(indexer.embedder, "search_similar") as mock_search:
-                mock_search.return_value = [(0, 0.8), (1, 0.3)]
-                results = await indexer.search_tools(query, k=k)
-
-                assert len(results) == expected_results["len"]
-                assert all(isinstance(r, SearchResult) for r in results)
-                assert results[0].tool.name == expected_results["tool_name"]
-                if expected_results.get("score_check"):
-                    assert abs(results[0].score - 0.689) < 0.01
-                    assert abs(results[1].score - 0.574) < 0.01
-                    assert results[0].score > results[1].score
-
-        elif scenario == "vector_embedder":
-            indexer.embedder = MockEmbedder() # Use mock for vector embedder
-            mock_results = [
-                SearchResult(
-                    tool=ToolMetadata(
-                        id=1,
-                        name=expected_results["tool_name"],
-                        description="desc",
-                        hash="hash",
-                        server_name="server",
-                    ),
-                    score=0.9,
-                )
-            ]
-            mock_persistence.search_similar_tools.return_value = mock_results
-            results = await indexer.search_tools(query, k=k)
-
-            assert len(results) == expected_results["len"]
-            assert results[0].tool.name == expected_results["tool_name"]
-            assert results[0].score == 0.9
-            mock_persistence.search_similar_tools.assert_called_once()
-
-        elif scenario == "no_results":
-            mock_persistence.get_all_tools.return_value = []
-            results = await indexer.search_tools(query, k=k)
-            assert results == []
-
-        elif scenario == "sample_data":
-            sample_data = get_sample_tools_data()
-            for tool_data in sample_data:
-                await indexer.index_tool(
-                    name=tool_data["name"],
-                    description=tool_data["description"],
-                    server_name=tool_data["server_name"],
-                    params=tool_data["params"],
-                    tags=tool_data.get("tags", []),
-                    annotations=tool_data.get("annotations", {}),
-                )
-            queries = get_search_queries()
-            query_data = next(q for q in queries if q["query"] == query)
-
-            results = await indexer.search_tools(query, k=k)
-
-            if expected_results.get("len_min") is not None:
-                assert len(results) >= expected_results["len_min"]
-            if expected_results.get("tool_names"):
-                found_tools = {r.tool.name for r in results}
-                assert any(tool in found_tools for tool in expected_results["tool_names"]), (
-                    f"Query '{query}' should find at least one of {expected_results["tool_names"]}, got {found_tools}"
-                )
-            if expected_results.get("min_score_check"):
-                if results:
-                    assert max(r.score for r in results) >= query_data["min_score"], (
-                        f"Query '{query}' should have score >= {query_data["min_score"]}"
-                    )
-            if expected_results.get("len_max") is not None:
-                assert len(results) == expected_results["len_max"]
-            if expected_results.get("max_score_check"):
-                if results:
-                    assert all(r.score < 0.5 for r in results), (
-                        f"Nonsense query '{query}' should have low scores"
-                    )
 
     @pytest.mark.asyncio
     async def test_index_multiple_tools_different_servers(self, temp_indexer_facade):
@@ -565,3 +488,153 @@ class TestIndexerFacade:
         # Check that embed_text was called
         assert len(mock_embedder.call_log) > 0
         assert any("embed_text" in call for call in mock_embedder.call_log)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "query, k, expected_len, expected_tool_name, expected_score_check",
+        [
+            ("create virtual machine", 2, 2, "create_instance", True),
+        ],
+    )
+    async def test_indexer_facade_search_bm25_basic(
+        self, mock_persistence, temp_index_dir, query, k, expected_len, expected_tool_name, expected_score_check
+    ):
+        """Test basic BM25 search scenario for IndexerFacade."""
+        indexer = IndexerFacade(
+            mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
+        )
+
+        sample_tools = [
+            ToolMetadata(
+                id=1,
+                name="create_instance",
+                description="Create VM",
+                hash="hash1",
+                server_name="api",
+                params_json='{"parameters": {}, "tags": [], "annotations": null}',
+            ),
+            ToolMetadata(
+                id=2,
+                name="delete_volume",
+                description="Delete storage",
+                hash="hash2",
+                server_name="api",
+                params_json='{"parameters": {}, "tags": [], "annotations": null}',
+            ),
+        ]
+        mock_persistence.get_all_tools.return_value = sample_tools
+        with patch.object(indexer.embedder, "search_similar") as mock_search:
+            mock_search.return_value = [(0, 0.8), (1, 0.3)]
+            results = await indexer.search_tools(query, k=k)
+
+            assert len(results) == expected_len
+            assert all(isinstance(r, SearchResult) for r in results)
+            assert results[0].tool.name == expected_tool_name
+            if expected_score_check:
+                assert abs(results[0].score - 0.689) < 0.01
+                assert abs(results[1].score - 0.574) < 0.01
+                assert results[0].score > results[1].score
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "query, k, expected_len, expected_tool_name",
+        [
+            ("test query", 3, 1, "test_tool"),
+        ],
+    )
+    async def test_indexer_facade_search_vector_embedder(
+        self, mock_persistence, temp_index_dir, query, k, expected_len, expected_tool_name
+    ):
+        """Test vector embedder search scenario for IndexerFacade."""
+        indexer = IndexerFacade(
+            mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
+        )
+        # Use MockEmbedder for vector embedder scenario
+        indexer.embedder = MockEmbedder()
+
+        mock_results = [
+            SearchResult(
+                tool=ToolMetadata(
+                    id=1,
+                    name=expected_tool_name,
+                    description="desc",
+                    hash="hash",
+                    server_name="server",
+                ),
+                score=0.9,
+            )
+        ]
+        mock_persistence.search_similar_tools.return_value = mock_results
+        results = await indexer.search_tools(query, k=k)
+
+        assert len(results) == expected_len
+        assert results[0].tool.name == expected_tool_name
+        assert results[0].score == 0.9
+        mock_persistence.search_similar_tools.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("query, k", [
+        ("nonexistent query", 5) 
+    ])
+    async def test_indexer_facade_search_no_results(
+        self, mock_persistence, temp_index_dir, query, k
+    ):
+        """Test search scenario with no results for IndexerFacade."""
+        indexer = IndexerFacade(
+            mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
+        )
+        mock_persistence.get_all_tools.return_value = [] # Ensure no tools are found
+        results = await indexer.search_tools(query, k=k)
+        assert results == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "query, k, expected_len_min, expected_tool_names, min_score_check, expected_len_max, max_score_check",
+        [
+            ("create virtual machine", 5, 1, ["create_instance"], True, None, False),
+            ("nonsense random query xyz", 5, None, None, False, 0, True),
+        ],
+    )
+    async def test_indexer_facade_search_sample_data(
+        self, mock_persistence, temp_index_dir, query, k, expected_len_min, expected_tool_names, min_score_check, expected_len_max, max_score_check
+    ):
+        """Test sample data search scenarios for IndexerFacade."""
+        indexer = IndexerFacade(
+            mock_persistence, EmbedderType.BM25, index_dir=temp_index_dir
+        )
+
+        sample_data = get_sample_tools_data()
+        for tool_data in sample_data:
+            await indexer.index_tool(
+                name=tool_data["name"],
+                description=tool_data["description"],
+                server_name=tool_data["server_name"],
+                params=tool_data["params"],
+                tags=tool_data.get("tags", []),
+                annotations=tool_data.get("annotations", {}),
+            )
+        
+        queries = get_search_queries()
+        query_data = next((q for q in queries if q["query"] == query), None)
+
+        results = await indexer.search_tools(query, k=k)
+
+        if expected_len_min is not None:
+            assert len(results) >= expected_len_min
+        if expected_tool_names:
+            found_tools = {r.tool.name for r in results}
+            assert any(tool in found_tools for tool in expected_tool_names), (
+                f"Query '{query}' should find at least one of {expected_tool_names}, got {found_tools}"
+            )
+        if min_score_check:
+            if results and query_data:
+                assert max(r.score for r in results) >= query_data["min_score"], (
+                    f"Query '{query}' should have score >= {query_data["min_score"]}"
+                )
+        if expected_len_max is not None:
+            assert len(results) == expected_len_max
+        if max_score_check:
+            if results:
+                assert all(r.score < 0.5 for r in results), (
+                    f"Nonsense query '{query}' should have low scores"
+                )

@@ -16,9 +16,9 @@ from mcpproxy.models.schemas import (
     ServerConfig,
     ToolMetadata,
 )
-from mcpproxy.persistence.db import DatabaseManager
 from mcpproxy.persistence.facade import PersistenceFacade
 from .fixtures.data import sample_tool_metadata, sample_tool_metadata_list, sample_search_result, sample_proxy_config, sample_embeddings, sample_tool_params, sample_tool_tags, sample_tool_annotations
+from .fixtures.temp_storage_fixtures import temp_db_path, temp_faiss_path, in_memory_db
 
 
 @pytest.fixture(scope="session")
@@ -27,43 +27,6 @@ def event_loop():
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
-
-
-@pytest.fixture
-async def temp_db_path():
-    """Temporary database path for testing."""
-    # Generate a temporary file path but don't create the file
-    import os
-
-    temp_dir = tempfile.gettempdir()
-    db_path = os.path.join(temp_dir, f"test_db_{os.getpid()}_{id(object())}.db")
-    yield db_path
-    # Cleanup
-    Path(db_path).unlink(missing_ok=True)
-
-
-@pytest.fixture
-async def temp_faiss_path():
-    """Temporary Faiss index path for testing."""
-    # Generate a temporary file path but don't create the file
-    import os
-
-    temp_dir = tempfile.gettempdir()
-    faiss_path = os.path.join(
-        temp_dir, f"test_faiss_{os.getpid()}_{id(object())}.faiss"
-    )
-    yield faiss_path
-    # Cleanup
-    Path(faiss_path).unlink(missing_ok=True)
-
-
-@pytest.fixture
-async def in_memory_db() -> AsyncGenerator[DatabaseManager, None]:
-    """In-memory SQLite database for testing."""
-    # Use :memory: for pure in-memory database
-    db = DatabaseManager(":memory:")
-    yield db
-    # No cleanup needed for in-memory database
 
 
 @pytest.fixture

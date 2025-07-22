@@ -42,55 +42,83 @@ class TestDatabaseManager:
         finally:
             Path(db_path).unlink(missing_ok=True)
 
-    @pytest.mark.parametrize(
-        "scenario, query, expected_len, expected_names, expected_tool_hash, expected_tool_server, expected_result",
-        [
-            ("get_by_hash", {"hash": "abc123def456"}, None, None, "abc123def456", "company-api", "found"),
-            ("get_by_hash_not_found", {"hash": "nonexistent_hash"}, None, None, None, None, "not_found"),
-            ("get_all", None, 4, ["create_instance", "delete_instance", "list_volumes", "create_volume"], None, None, "all"),
-            ("get_by_server_company", {"server_name": "company-api"}, 2, ["create_instance", "delete_instance"], None, "company-api", "by_server"),
-            ("get_by_server_storage", {"server_name": "storage-api"}, 2, ["list_volumes", "create_volume"], None, "storage-api", "by_server"),
-            ("get_by_ids", {"ids": [1, 3]}, 2, ["create_instance", "list_volumes"], None, None, "by_ids"),
-            ("get_by_ids_empty", {"ids": []}, 0, [], None, None, "by_ids_empty"),
-        ],
-    )
     @pytest.mark.asyncio
-    async def test_database_manager_retrieval_scenarios(
-        self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list, scenario, query, expected_len, expected_names, expected_tool_hash, expected_tool_server, expected_result
-    ):
-        """Test various retrieval scenarios for DatabaseManager."""
+    async def test_get_tool_by_hash_found(self, in_memory_db, sample_tool_metadata):
+        """Test retrieving a tool by hash when found."""
         db = in_memory_db
+        await db.insert_tool(sample_tool_metadata)
+        retrieved_tool = await db.get_tool_by_hash("abc123def456")
+        assert retrieved_tool is not None
+        assert retrieved_tool.hash == "abc123def456"
+        assert retrieved_tool.server_name == "company-api"
 
-        # Prepare data for all scenarios
+    @pytest.mark.asyncio
+    async def test_get_tool_by_hash_not_found(self, in_memory_db):
+        """Test retrieving a tool by hash when not found."""
+        db = in_memory_db
+        retrieved_tool = await db.get_tool_by_hash("nonexistent_hash")
+        assert retrieved_tool is None
+
+    @pytest.mark.asyncio
+    async def test_get_all_tools(self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list):
+        """Test retrieving all tools."""
+        db = in_memory_db
         await db.insert_tool(sample_tool_metadata)
         for tool in sample_tool_metadata_list:
             await db.insert_tool(tool)
+        all_tools = await db.get_all_tools()
+        assert len(all_tools) == 4
+        expected_names = ["create_instance", "delete_instance", "list_volumes", "create_volume"]
+        assert {tool.name for tool in all_tools} == set(expected_names)
 
-        if scenario == "get_by_hash":
-            retrieved_tool = await db.get_tool_by_hash(query["hash"])
-            assert retrieved_tool is not None
-            assert retrieved_tool.hash == expected_tool_hash
-            assert retrieved_tool.server_name == expected_tool_server
-        elif scenario == "get_by_hash_not_found":
-            retrieved_tool = await db.get_tool_by_hash(query["hash"])
-            assert retrieved_tool is None
-        elif scenario == "get_all":
-            all_tools = await db.get_all_tools()
-            assert len(all_tools) == expected_len
-            assert {tool.name for tool in all_tools} == set(expected_names)
-        elif scenario == "get_by_server_company" or scenario == "get_by_server_storage":
-            tools_by_server = await db.get_tools_by_server(query["server_name"])
-            assert len(tools_by_server) == expected_len
-            assert {tool.name for tool in tools_by_server} == set(expected_names)
-            assert all(tool.server_name == expected_tool_server for tool in tools_by_server)
-        elif scenario == "get_by_ids":
-            tools_by_ids = await db.get_tools_by_ids(query["ids"])
-            assert len(tools_by_ids) == expected_len
-            assert {tool.name for tool in tools_by_ids} == set(expected_names)
-        elif scenario == "get_by_ids_empty":
-            tools_by_ids = await db.get_tools_by_ids(query["ids"])
-            assert len(tools_by_ids) == expected_len
-            assert tools_by_ids == []
+    @pytest.mark.asyncio
+    async def test_get_tools_by_server_company(self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list):
+        """Test retrieving tools by server name for 'company-api'."""
+        db = in_memory_db
+        await db.insert_tool(sample_tool_metadata)
+        for tool in sample_tool_metadata_list:
+            await db.insert_tool(tool)
+        tools_by_server = await db.get_tools_by_server("company-api")
+        assert len(tools_by_server) == 2
+        expected_names = ["create_instance", "delete_instance"]
+        assert {tool.name for tool in tools_by_server} == set(expected_names)
+        assert all(tool.server_name == "company-api" for tool in tools_by_server)
+
+    @pytest.mark.asyncio
+    async def test_get_tools_by_server_storage(self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list):
+        """Test retrieving tools by server name for 'storage-api'."""
+        db = in_memory_db
+        await db.insert_tool(sample_tool_metadata)
+        for tool in sample_tool_metadata_list:
+            await db.insert_tool(tool)
+        tools_by_server = await db.get_tools_by_server("storage-api")
+        assert len(tools_by_server) == 2
+        expected_names = ["list_volumes", "create_volume"]
+        assert {tool.name for tool in tools_by_server} == set(expected_names)
+        assert all(tool.server_name == "storage-api" for tool in tools_by_server)
+
+    @pytest.mark.asyncio
+    async def test_get_tools_by_ids(self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list):
+        """Test retrieving tools by a list of IDs."""
+        db = in_memory_db
+        await db.insert_tool(sample_tool_metadata)
+        for tool in sample_tool_metadata_list:
+            await db.insert_tool(tool)
+        tools_by_ids = await db.get_tools_by_ids([1, 3])
+        assert len(tools_by_ids) == 2
+        expected_names = ["create_instance", "list_volumes"]
+        assert {tool.name for tool in tools_by_ids} == set(expected_names)
+
+    @pytest.mark.asyncio
+    async def test_get_tools_by_ids_empty(self, in_memory_db, sample_tool_metadata, sample_tool_metadata_list):
+        """Test retrieving tools with an empty list of IDs."""
+        db = in_memory_db
+        await db.insert_tool(sample_tool_metadata)
+        for tool in sample_tool_metadata_list:
+            await db.insert_tool(tool)
+        tools_by_ids = await db.get_tools_by_ids([])
+        assert len(tools_by_ids) == 0
+        assert tools_by_ids == []
 
     @pytest.mark.asyncio
     async def test_update_tool(self, in_memory_db, sample_tool_metadata):
@@ -177,6 +205,64 @@ class TestFaissStore:
             FaissStore("existing_index.faiss", dimension=384)
             mock_faiss_module.read_index.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_faiss_store_add_vector_valid(self, mock_faiss):
+        """Test adding a valid vector to FaissStore."""
+        mock_faiss_module, mock_index = mock_faiss
+        store = FaissStore(":memory:", dimension=384)
+        vector_input = np.random.random(384).astype(np.float32)
+
+        vector_id = await store.add_vector(vector_input)
+        assert vector_id == 0
+        assert store.next_id == 1
+        mock_index.add.assert_called_once_with(np.array([vector_input]))
+
+    @pytest.mark.asyncio
+    async def test_faiss_store_add_vector_wrong_dimension(self, mock_faiss):
+        """Test adding a vector with an incorrect dimension to FaissStore."""
+        mock_faiss_module, mock_index = mock_faiss
+        store = FaissStore(":memory:", dimension=384)
+        vector_input = np.random.random(256).astype(np.float32) # Wrong dimension
+        with pytest.raises(ValueError, match="Vector must have dimension 384"):
+            await store.add_vector(vector_input)
+
+    @pytest.mark.asyncio
+    async def test_faiss_store_search_vectors_valid(self, mock_faiss):
+        """Test searching for vectors in FaissStore with valid results."""
+        mock_faiss_module, mock_index = mock_faiss
+        store = FaissStore(":memory:", dimension=384)
+
+        # Mock search results
+        mock_distances = np.array([0.1, 0.2, 0.3])
+        mock_indices = np.array([0, 1, 2])
+        mock_index.search.return_value = (
+            mock_distances.reshape(1, -1),
+            mock_indices.reshape(1, -1),
+        )
+        mock_index.ntotal = 5 # Simulate having some vectors
+
+        query_vector = np.random.random(384).astype(np.float32)
+        distances, indices = await store.search(query_vector, k=3)
+
+        assert len(distances) == 3
+        assert len(indices) == 3
+        np.testing.assert_array_equal(distances, mock_distances)
+        np.testing.assert_array_equal(indices, mock_indices)
+
+    @pytest.mark.asyncio
+    async def test_faiss_store_search_empty_index(self, mock_faiss):
+        """Test searching for vectors in an empty FaissStore index."""
+        mock_faiss_module, mock_index = mock_faiss
+        store = FaissStore(":memory:", dimension=384)
+
+        mock_index.ntotal = 0 # Simulate empty index
+
+        query_vector = np.random.random(384).astype(np.float32)
+        distances, indices = await store.search(query_vector, k=5)
+
+        assert len(distances) == 0
+        assert len(indices) == 0
+
     @pytest.mark.parametrize(
         "scenario, vector_input, k, expected_output_len, raises_error",
         [
@@ -259,6 +345,44 @@ class TestPersistenceFacade:
         assert tool_id > 0
         assert sample_tool_metadata.id == tool_id
         assert sample_tool_metadata.faiss_vector_id is not None
+
+    @pytest.mark.asyncio
+    async def test_persistence_facade_get_by_hash(self, temp_persistence_facade, sample_tool_metadata):
+        """Test retrieving a tool by hash using PersistenceFacade."""
+        vector = np.random.random(384).astype(np.float32)
+        await temp_persistence_facade.store_tool_with_vector(sample_tool_metadata, vector)
+
+        retrieved_tool = await temp_persistence_facade.get_tool_by_hash("abc123def456")
+        assert retrieved_tool is not None
+        assert retrieved_tool.hash == "abc123def456"
+        assert retrieved_tool.server_name == "company-api"
+
+    @pytest.mark.asyncio
+    async def test_persistence_facade_get_all_tools(self, temp_persistence_facade, sample_tool_metadata, sample_tool_metadata_list):
+        """Test retrieving all tools using PersistenceFacade."""
+        vector = np.random.random(384).astype(np.float32)
+        await temp_persistence_facade.store_tool_with_vector(sample_tool_metadata, vector)
+        for tool in sample_tool_metadata_list:
+            await temp_persistence_facade.store_tool_with_vector(tool, vector)
+
+        all_tools = await temp_persistence_facade.get_all_tools()
+        assert len(all_tools) == 4
+        expected_names = ["create_instance", "delete_instance", "list_volumes", "create_volume"]
+        assert {tool.name for tool in all_tools} == set(expected_names)
+
+    @pytest.mark.asyncio
+    async def test_persistence_facade_get_by_server(self, temp_persistence_facade, sample_tool_metadata, sample_tool_metadata_list):
+        """Test retrieving tools by server name using PersistenceFacade."""
+        vector = np.random.random(384).astype(np.float32)
+        await temp_persistence_facade.store_tool_with_vector(sample_tool_metadata, vector)
+        for tool in sample_tool_metadata_list:
+            await temp_persistence_facade.store_tool_with_vector(tool, vector)
+
+        tools_by_server = await temp_persistence_facade.get_tools_by_server("company-api")
+        assert len(tools_by_server) == 2
+        expected_names = ["create_instance", "delete_instance"]
+        assert {tool.name for tool in tools_by_server} == set(expected_names)
+        assert all(tool.server_name == "company-api" for tool in tools_by_server)
 
     @pytest.mark.parametrize(
         "scenario, query, expected_len, expected_names, expected_tool_hash, expected_server_name",
