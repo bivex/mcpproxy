@@ -317,48 +317,48 @@ class SmartMCPProxyServer:
 
     def _setup_tools(self) -> None:
         """Setup core proxy tools."""
-        if self.routing_type == "CALL_TOOL":
-            @self.mcp.tool()
-            async def call_tool(name: str, args: dict[str, Any]) -> str:
-                if not self.tool_pool_manager:
-                    return json.dumps({"error": "ToolPoolManager not initialized"})
-                return await self.tool_pool_manager.call_tool(name, args)
-        else: # DYNAMIC
-            @self.mcp.tool()
-            async def retrieve_tools(query: str) -> str:
-                if not self.tool_pool_manager:
-                    return json.dumps({"error": "ToolPoolManager not initialized"})
 
-                # Get the result from ToolPoolManager first
-                result_json_str = await self.tool_pool_manager.retrieve_tools(query)
+        @self.mcp.tool()
+        async def call_tool(name: str, args: dict[str, Any]) -> str:
+            if not self.tool_pool_manager:
+                return json.dumps({"error": "ToolPoolManager not initialized"})
+            return await self.tool_pool_manager.call_tool(name, args)
 
-                # Parse the result to check for newly_registered or evicted_tools
-                result_data = json.loads(result_json_str)
+        @self.mcp.tool()
+        async def retrieve_tools(query: str) -> str:
+            if not self.tool_pool_manager:
+                return json.dumps({"error": "ToolPoolManager not initialized"})
 
-                # Notify connected clients that the available tools list has changed so they can refresh
-                try:
-                    if result_data.get("newly_registered") or result_data.get("evicted_tools"):
-                        # Standard notification (proper MCP way)
-                        await self.mcp._mcp_server.request_context.session.send_notification(
-                            types.ToolListChangedNotification(
-                                method="notifications/tools/list_changed"
-                            ),
-                            related_request_id=self.mcp._mcp_server.request_context.request_id,
-                        )
-                        logger.debug(
-                            f"Sent tools/list_changed notification {self.mcp._mcp_server.request_context.request_id}"
-                        )
+            # Get the result from ToolPoolManager first
+            result_json_str = await self.tool_pool_manager.retrieve_tools(query)
 
-                        # Execute external command to trigger client refresh (workaround for clients
-                        # that don't properly handle tools/list_changed notifications)
-                        await self._execute_list_changed_command()
+            # Parse the result to check for newly_registered or evicted_tools
+            result_data = json.loads(result_json_str)
 
-                except Exception as notify_err:
-                    logger.warning(
-                        f"Failed to emit tools/list_changed notification: {notify_err}"
+            # Notify connected clients that the available tools list has changed so they can refresh
+            try:
+                if self.routing_type == "DYNAMIC" and (result_data.get("newly_registered") or result_data.get("evicted_tools")):
+                    # Standard notification (proper MCP way)
+                    await self.mcp._mcp_server.request_context.session.send_notification(
+                        types.ToolListChangedNotification(
+                            method="notifications/tools/list_changed"
+                        ),
+                        related_request_id=self.mcp._mcp_server.request_context.request_id,
+                    )
+                    logger.debug(
+                        f"Sent tools/list_changed notification {self.mcp._mcp_server.request_context.request_id}"
                     )
 
-                return result_json_str # Return the original result string
+                    # Execute external command to trigger client refresh (workaround for clients
+                    # that don't properly handle tools/list_changed notifications)
+                    await self._execute_list_changed_command()
+
+            except Exception as notify_err:
+                logger.warning(
+                    f"Failed to emit tools/list_changed notification: {notify_err}"
+                )
+
+            return result_json_str # Return the original result string
 
     async def _execute_list_changed_command(self) -> None:
         """Execute external command after tools list changes to trigger client refresh."""
