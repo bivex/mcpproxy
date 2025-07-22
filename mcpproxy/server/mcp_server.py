@@ -298,7 +298,7 @@ class SmartMCPProxyServer:
         logger = get_logger()
         try:
             logger.debug("Creating upstream clients and proxy servers...")
-            await self.server_discovery_manager.create_upstream_clients_and_proxies()
+            await self.server_discovery_manager.create_clients_and_proxies()
             self.upstream_clients = self.server_discovery_manager.upstream_clients
             self.proxy_servers = self.server_discovery_manager.proxy_servers
             logger.debug(

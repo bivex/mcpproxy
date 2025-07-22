@@ -18,12 +18,13 @@ class OpenAIEmbedder(BaseEmbedder):
             import openai
         except ImportError:
             print(
-                "\n❌ ERROR: OpenAI embeddings requires openai but it's not installed.",
+                "\n❌ ERROR: OpenAI embeddings requires openai and tiktoken"
+                " but they\'re not installed.",
                 file=sys.stderr
             )
             print("   To use OpenAI embeddings, install with:", file=sys.stderr)
             print("   pip install mcpproxy[openai]", file=sys.stderr)
-            print("   or pip install openai", file=sys.stderr)
+            print("   or pip install openai tiktoken", file=sys.stderr)
             print(file=sys.stderr)
             sys.exit(1)
 

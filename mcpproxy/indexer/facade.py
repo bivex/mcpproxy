@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from mcpproxy.models.schemas import ToolMetadata, SearchResult, ToolData
+from mcpproxy.models.schemas import ToolMetadata, SearchResult, ToolData, EmbedderType
 from ..persistence.facade import PersistenceFacade
 from ..utils.dependency_management.dependencies import check_embedder_dependencies
 from ..utils.hashing.hashing import compute_tool_hash
